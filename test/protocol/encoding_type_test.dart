@@ -12,6 +12,12 @@ void main() {
       ),
       equals(const RemoteFrameBufferEncodingType.raw()),
     );
+    expect(
+      RemoteFrameBufferEncodingType.fromBytes(
+        bytes: ByteData(4)..setInt32(0, 16),
+      ),
+      equals(const RemoteFrameBufferEncodingType.zrle()),
+    );
     final RemoteFrameBufferEncodingType encodingType =
         RemoteFrameBufferEncodingType.fromBytes(
       bytes: ByteData(4)..setInt32(0, -1),
@@ -40,6 +46,15 @@ void main() {
           .asUint8List(),
       equals(
         (ByteData(4)..setInt32(0, 1)).buffer.asUint8List(),
+      ),
+    );
+    expect(
+      const RemoteFrameBufferEncodingType.zrle()
+          .toBytes()
+          .buffer
+          .asUint8List(),
+      equals(
+        (ByteData(4)..setInt32(0, 16)).buffer.asUint8List(),
       ),
     );
   });

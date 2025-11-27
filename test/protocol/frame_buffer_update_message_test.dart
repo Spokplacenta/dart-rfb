@@ -51,4 +51,46 @@ void main() {
     expect(message.toNullable()?.rectangles.first.x, equals(0));
     expect(message.toNullable()?.rectangles.first.y, equals(0));
   });
+
+  test('Framebuffer update message parses ZRLE rectangle', () async {
+    final MockRawSocket mockRawSocket = MockRawSocket();
+    when(mockRawSocket.available()).thenReturn(24);
+    final List<ByteData> readResponses = <ByteData>[
+      ByteData(2)..setUint16(0, 1),
+      ByteData(12)
+        ..setUint16(0, 0)
+        ..setUint16(2, 0)
+        ..setUint16(4, 1)
+        ..setUint16(6, 1)
+        ..setInt32(8, 16),
+      ByteData(4)..setUint32(0, 3),
+      ByteData(3)
+        ..setUint8(0, 0x78)
+        ..setUint8(1, 0x9C)
+        ..setUint8(2, 0x00),
+    ];
+    when(mockRawSocket.read(any)).thenAnswer(
+      (final _) => readResponses.removeAt(0).buffer.asUint8List(),
+    );
+    final Either<Object, RemoteFrameBufferFrameBufferUpdateMessage> message =
+        await runFakeAsync(
+      (final _) => RemoteFrameBufferFrameBufferUpdateMessage.readFromSocket(
+        config: Config(
+          frameBufferHeight: 1,
+          frameBufferWidth: 1,
+          pixelFormat: RemoteFrameBufferPixelFormat.bgra8888,
+        ),
+        socket: mockRawSocket,
+      ).run(),
+    );
+    final RemoteFrameBufferFrameBufferUpdateMessageRectangle rectangle =
+        message.getOrElse((final _) => throw Exception()).rectangles.first;
+    expect(rectangle.encodingType, equals(const RemoteFrameBufferEncodingType.zrle()));
+    expect(rectangle.pixelData.lengthInBytes, equals(7));
+    expect(rectangle.pixelData.getUint32(0), equals(3));
+    expect(
+      rectangle.pixelData.buffer.asUint8List().sublist(4),
+      equals(Uint8List.fromList(<int>[0x78, 0x9C, 0x00])),
+    );
+  });
 }

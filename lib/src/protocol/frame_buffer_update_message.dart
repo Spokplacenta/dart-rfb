@@ -46,24 +46,16 @@ class RemoteFrameBufferFrameBufferUpdateMessage
               bytes: await socket.readSync(length: 12).run(),
             );
             RemoteFrameBufferClient.logger.fine('< $rectangleHeader');
-            final int numberOfDataBytes = rectangleHeader.encodingType.map(
-              copyRect: (final _) => 4,
-              raw: (final _) => (rectangleHeader.width *
-                      rectangleHeader.height *
-                      (config.pixelFormat.bitsPerPixel / 8))
-                  .toInt(),
-              unsupported: (final _) => 0,
+            final ByteData pixelData = await _readRectanglePixelData(
+              config: config,
+              header: rectangleHeader,
+              socket: socket,
             );
             rectangles.add(
               RemoteFrameBufferFrameBufferUpdateMessageRectangle(
                 encodingType: rectangleHeader.encodingType,
                 height: rectangleHeader.height,
-                pixelData: await socket
-                    .readSync(
-                      length: numberOfDataBytes,
-                      readWaitDuration: none(),
-                    )
-                    .run(),
+                pixelData: pixelData,
                 width: rectangleHeader.width,
                 x: rectangleHeader.x,
                 y: rectangleHeader.y,
@@ -119,3 +111,50 @@ class RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader
 
   const RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader._();
 }
+
+Future<ByteData> _readRectanglePixelData({
+  required final Config config,
+  required final RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader
+      header,
+  required final RawSocket socket,
+}) =>
+    header.encodingType.map(
+      copyRect: (final _) => socket.readSync(length: 4).run(),
+      raw: (final _) => socket
+          .readSync(
+            length: (header.width *
+                    header.height *
+                    (config.pixelFormat.bitsPerPixel / 8))
+                .toInt(),
+            readWaitDuration: none(),
+          )
+          .run(),
+      zrle: (final _) async {
+        final ByteData compressedLengthBytes =
+            await socket.readSync(length: 4).run();
+        final int compressedLength = compressedLengthBytes.getUint32(0);
+        final ByteData compressedPayload = compressedLength == 0
+            ? ByteData(0)
+            : await socket
+                .readSync(
+                  length: compressedLength,
+                  readWaitDuration: none(),
+                )
+                .run();
+        final BytesBuilder bytesBuilder = BytesBuilder()
+          ..add(
+            compressedLengthBytes.buffer.asUint8List(
+              compressedLengthBytes.offsetInBytes,
+              compressedLengthBytes.lengthInBytes,
+            ),
+          )
+          ..add(
+            compressedPayload.buffer.asUint8List(
+              compressedPayload.offsetInBytes,
+              compressedPayload.lengthInBytes,
+            ),
+          );
+        return ByteData.sublistView(bytesBuilder.toBytes());
+      },
+      unsupported: (final _) => Future<ByteData>.value(ByteData(0)),
+    );

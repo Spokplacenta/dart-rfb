@@ -22,3 +22,4 @@ doc/api/
 
 # FVM Version Cache
 .fvm/
+.vscode/VNC.code-workspace

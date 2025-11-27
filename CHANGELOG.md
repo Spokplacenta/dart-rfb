@@ -48,3 +48,6 @@
 ## 0.8.0
 - Upgrade `binary` to 4.0.0
 - Manage Dart SDK via `fvm`
+
+## 0.9.0
+- Add full support for the ZRLE encoding (client-side decompression plus tests)

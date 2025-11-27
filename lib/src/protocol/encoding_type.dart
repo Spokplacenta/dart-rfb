@@ -13,6 +13,8 @@ class RemoteFrameBufferEncodingType with _$RemoteFrameBufferEncodingType {
       RemoteFrameBufferEncodingTypeCopyRect;
   const factory RemoteFrameBufferEncodingType.raw() =
       RemoteFrameBufferEncodingTypeRaw;
+  const factory RemoteFrameBufferEncodingType.zrle() =
+      RemoteFrameBufferEncodingTypeZrle;
   const factory RemoteFrameBufferEncodingType.unsupported({
     required final ByteData bytes,
   }) = RemoteFrameBufferEncodingTypeUnsupported;
@@ -26,6 +28,8 @@ class RemoteFrameBufferEncodingType with _$RemoteFrameBufferEncodingType {
         return const RemoteFrameBufferEncodingType.raw();
       case 1:
         return const RemoteFrameBufferEncodingType.copyRect();
+      case 16:
+        return const RemoteFrameBufferEncodingType.zrle();
       default:
         return RemoteFrameBufferEncodingType.unsupported(bytes: bytes);
     }
@@ -38,6 +42,7 @@ class RemoteFrameBufferEncodingType with _$RemoteFrameBufferEncodingType {
       map(
         copyRect: (final _) => 1,
         raw: (final _) => 0,
+        zrle: (final _) => 16,
         unsupported: (final _) => -1,
       ),
     );

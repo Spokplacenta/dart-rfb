@@ -6,11 +6,13 @@ import 'dart:typed_data';
 import 'package:collection/collection.dart';
 import 'package:dart_des/dart_des.dart';
 import 'package:dart_rfb/src/client/config.dart';
+import 'package:dart_rfb/src/client/rectangle_converter.dart';
 import 'package:dart_rfb/src/client/remote_frame_buffer_client_key_event.dart';
 import 'package:dart_rfb/src/client/remote_frame_buffer_client_pointer_event.dart';
 import 'package:dart_rfb/src/client/remote_frame_buffer_client_read_message.dart';
 import 'package:dart_rfb/src/client/remote_frame_buffer_client_update.dart';
 import 'package:dart_rfb/src/constants.dart';
+import 'package:dart_rfb/src/encodings/zrle_decoder.dart';
 import 'package:dart_rfb/src/extensions/byte_data_extensions.dart';
 import 'package:dart_rfb/src/extensions/int_extensions.dart';
 import 'package:dart_rfb/src/extensions/raw_socket_extensions.dart';
@@ -52,6 +54,11 @@ class RemoteFrameBufferClient {
   Option<RemoteFrameBufferSecurityType> _selectedSecurityType = none();
 
   Option<RawSocket> _socket = none();
+
+  Option<ZrleDecoder> _zrleDecoder = none();
+
+  final RemoteFrameBufferRectangleConverter _rectangleConverter =
+      RemoteFrameBufferRectangleConverter(logger: logger);
 
   final StreamController<String> _serverClipBoardStreamController =
       StreamController<String>();
@@ -210,13 +217,12 @@ class RemoteFrameBufferClient {
                     final RemoteFrameBufferFrameBufferUpdateMessageRectangle
                         rectangle,
                   ) =>
-                      RemoteFrameBufferClientUpdateRectangle(
-                    byteData: rectangle.pixelData,
-                    encodingType: rectangle.encodingType,
-                    height: rectangle.height,
-                    width: rectangle.width,
-                    x: rectangle.x,
-                    y: rectangle.y,
+                      _rectangleConverter.convert(
+                    rectangle: rectangle,
+                    zrleDecoder: _zrleDecoder.match(
+                      () => null,
+                      (final ZrleDecoder decoder) => decoder,
+                    ),
                   ),
                 ),
               ),
@@ -640,6 +646,7 @@ class RemoteFrameBufferClient {
           const RemoteFrameBufferSetEncodingsMessage message =
               RemoteFrameBufferSetEncodingsMessage(
             encodingTypes: <RemoteFrameBufferEncodingType>[
+              RemoteFrameBufferEncodingType.zrle(),
               RemoteFrameBufferEncodingType.copyRect(),
               RemoteFrameBufferEncodingType.raw(),
             ],
@@ -658,6 +665,9 @@ class RemoteFrameBufferClient {
           final RemoteFrameBufferSetPixelFormatMessage message =
               RemoteFrameBufferSetPixelFormatMessage(
             pixelFormat: RemoteFrameBufferPixelFormat.bgra8888,
+          );
+          _zrleDecoder = some(
+            ZrleDecoder(pixelFormat: message.pixelFormat),
           );
           logger.info('> $message');
           socket.write(message.toBytes().buffer.asUint8ClampedList());
