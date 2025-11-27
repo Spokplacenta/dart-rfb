@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -93,4 +92,3 @@ ByteData _buildZrleData(final List<int> decompressedBytes) {
     ..add(compressed);
   return ByteData.sublistView(builder.toBytes());
 }
-
