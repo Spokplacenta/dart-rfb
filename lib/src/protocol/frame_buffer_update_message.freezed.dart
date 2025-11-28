@@ -12,14 +12,16 @@ part of 'frame_buffer_update_message.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$RemoteFrameBufferFrameBufferUpdateMessage {
   Iterable<RemoteFrameBufferFrameBufferUpdateMessageRectangle> get rectangles =>
       throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessage
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $RemoteFrameBufferFrameBufferUpdateMessageCopyWith<
           RemoteFrameBufferFrameBufferUpdateMessage>
       get copyWith => throw _privateConstructorUsedError;
@@ -50,6 +52,8 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageCopyWithImpl<$Res,
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessage
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -88,6 +92,8 @@ class __$$RemoteFrameBufferFrameBufferUpdateMessageImplCopyWithImpl<$Res>
       $Res Function(_$RemoteFrameBufferFrameBufferUpdateMessageImpl) _then)
       : super(_value, _then);
 
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessage
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -119,7 +125,7 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageImpl
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$RemoteFrameBufferFrameBufferUpdateMessageImpl &&
@@ -131,7 +137,9 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageImpl
   int get hashCode =>
       Object.hash(runtimeType, const DeepCollectionEquality().hash(rectangles));
 
-  @JsonKey(ignore: true)
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessage
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$RemoteFrameBufferFrameBufferUpdateMessageImplCopyWith<
@@ -152,8 +160,11 @@ abstract class _RemoteFrameBufferFrameBufferUpdateMessage
 
   @override
   Iterable<RemoteFrameBufferFrameBufferUpdateMessageRectangle> get rectangles;
+
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessage
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$RemoteFrameBufferFrameBufferUpdateMessageImplCopyWith<
           _$RemoteFrameBufferFrameBufferUpdateMessageImpl>
       get copyWith => throw _privateConstructorUsedError;
@@ -169,7 +180,9 @@ mixin _$RemoteFrameBufferFrameBufferUpdateMessageRectangle {
   int get x => throw _privateConstructorUsedError;
   int get y => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangle
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $RemoteFrameBufferFrameBufferUpdateMessageRectangleCopyWith<
           RemoteFrameBufferFrameBufferUpdateMessageRectangle>
       get copyWith => throw _privateConstructorUsedError;
@@ -209,6 +222,8 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageRectangleCopyWithImpl<$Res,
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangle
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -247,6 +262,8 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageRectangleCopyWithImpl<$Res,
     ) as $Val);
   }
 
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangle
+  /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
   $RemoteFrameBufferEncodingTypeCopyWith<$Res> get encodingType {
@@ -297,6 +314,8 @@ class __$$RemoteFrameBufferFrameBufferUpdateMessageRectangleImplCopyWithImpl<
           _then)
       : super(_value, _then);
 
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangle
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -367,7 +386,7 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageRectangleImpl
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$RemoteFrameBufferFrameBufferUpdateMessageRectangleImpl &&
@@ -385,7 +404,9 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageRectangleImpl
   int get hashCode =>
       Object.hash(runtimeType, encodingType, height, pixelData, width, x, y);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangle
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$RemoteFrameBufferFrameBufferUpdateMessageRectangleImplCopyWith<
@@ -419,8 +440,11 @@ abstract class _RemoteFrameBufferFrameBufferUpdateMessageRectangle
   int get x;
   @override
   int get y;
+
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangle
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$RemoteFrameBufferFrameBufferUpdateMessageRectangleImplCopyWith<
           _$RemoteFrameBufferFrameBufferUpdateMessageRectangleImpl>
       get copyWith => throw _privateConstructorUsedError;
@@ -435,7 +459,9 @@ mixin _$RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader {
   int get x => throw _privateConstructorUsedError;
   int get y => throw _privateConstructorUsedError;
 
-  @JsonKey(ignore: true)
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   $RemoteFrameBufferFrameBufferUpdateMessageRectangleHeaderCopyWith<
           RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader>
       get copyWith => throw _privateConstructorUsedError;
@@ -477,6 +503,8 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageRectangleHeaderCopyWithImpl<
   // ignore: unused_field
   final $Res Function($Val) _then;
 
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -510,6 +538,8 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageRectangleHeaderCopyWithImpl<
     ) as $Val);
   }
 
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader
+  /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
   $RemoteFrameBufferEncodingTypeCopyWith<$Res> get encodingType {
@@ -561,6 +591,8 @@ class __$$RemoteFrameBufferFrameBufferUpdateMessageRectangleHeaderImplCopyWithIm
           _then)
       : super(_value, _then);
 
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -624,7 +656,7 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageRectangleHeaderImpl
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other
@@ -641,7 +673,9 @@ class _$RemoteFrameBufferFrameBufferUpdateMessageRectangleHeaderImpl
   int get hashCode =>
       Object.hash(runtimeType, encodingType, height, width, x, y);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$RemoteFrameBufferFrameBufferUpdateMessageRectangleHeaderImplCopyWith<
@@ -674,8 +708,11 @@ abstract class _RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader
   int get x;
   @override
   int get y;
+
+  /// Create a copy of RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(ignore: true)
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$RemoteFrameBufferFrameBufferUpdateMessageRectangleHeaderImplCopyWith<
           _$RemoteFrameBufferFrameBufferUpdateMessageRectangleHeaderImpl>
       get copyWith => throw _privateConstructorUsedError;

@@ -8,16 +8,27 @@ import 'package:dart_rfb/src/protocol/pixel_format.dart';
 ///
 /// The decoder currently assumes little-endian pixel formats, which matches the
 /// `bgra8888` format negotiated by the client.
+///
+/// IMPORTANT: ZRLE uses a continuous zlib stream across all rectangles in a
+/// session. The [_inflater] must be reused for all decode() calls. Call
+/// [reset()] only when starting a new VNC session.
 class ZrleDecoder {
   ZrleDecoder({
     required final RemoteFrameBufferPixelFormat pixelFormat,
   })  : _pixelFormat = pixelFormat,
         _bytesPerPixel = (pixelFormat.bitsPerPixel / 8).ceil(),
-        _cpixelSize = ((pixelFormat.depth + 7) ~/ 8);
+        _cpixelSize = (pixelFormat.depth + 7) ~/ 8,
+        _inflater = RawZLibFilter.inflateFilter();
 
   final RemoteFrameBufferPixelFormat _pixelFormat;
   final int _bytesPerPixel;
   final int _cpixelSize;
+  RawZLibFilter _inflater;
+
+  /// Reset the zlib inflater. Call this when starting a new VNC session.
+  void reset() {
+    _inflater = RawZLibFilter.inflateFilter();
+  }
 
   /// Decode [zrleData] (length + compressed payload) into raw pixel bytes.
   ByteData decode({
@@ -39,8 +50,8 @@ class ZrleDecoder {
     if (compressedPayload.isEmpty) {
       return ByteData(width * height * _bytesPerPixel);
     }
-    final Uint8List decompressed =
-        Uint8List.fromList(ZLibCodec().decode(compressedPayload));
+    // Use persistent inflater for continuous zlib stream
+    final Uint8List decompressed = _inflate(compressedPayload);
     final Uint8List frameBuffer = Uint8List(width * height * _bytesPerPixel);
 
     int offset = 0;
@@ -64,6 +75,19 @@ class ZrleDecoder {
       throw const FormatException('ZRLE payload shorter than expected');
     }
     return ByteData.sublistView(frameBuffer);
+  }
+
+  /// Inflate compressed data using persistent zlib stream.
+  Uint8List _inflate(final Uint8List compressed) {
+    _inflater.process(compressed, 0, compressed.length);
+    final List<int> output = <int>[];
+    List<int>? chunk;
+    // For continuous zlib stream, we need to flush to get all available data
+    // but not finalize the stream (which would be flush: true)
+    while ((chunk = _inflater.processed(flush: true)) != null) {
+      output.addAll(chunk!);
+    }
+    return Uint8List.fromList(output);
   }
 
   int _decodeTile({
@@ -254,7 +278,11 @@ class ZrleDecoder {
     int currentOffset = dataOffset;
     for (int row = 0; row < tileHeight; row++) {
       int shift = 8 - bitsPerPixel;
+      int rowStartOffset = currentOffset;
       for (int col = 0; col < tileWidth; col++) {
+        if (currentOffset >= data.length) {
+          throw const FormatException('Packed palette tile data exhausted');
+        }
         final int byteValue = data[currentOffset];
         final int paletteIndex =
             (byteValue >> shift) & ((1 << bitsPerPixel) - 1);
@@ -272,14 +300,10 @@ class ZrleDecoder {
         if (shift < 0) {
           shift = 8 - bitsPerPixel;
           currentOffset++;
-          if (currentOffset >= dataOffset + packedBytes && row != tileHeight) {
-            throw const FormatException('Packed palette exhausted early');
-          }
         }
       }
-      if (shift < 8 - bitsPerPixel) {
-        currentOffset++;
-      }
+      // Each row is padded to byte boundary
+      currentOffset = rowStartOffset + bytesPerRow;
     }
     return currentOffset;
   }
@@ -444,8 +468,9 @@ class ZrleDecoder {
   }) {
     if (_pixelFormat.bigEndian) {
       final int padding = _bytesPerPixel - _cpixelSize;
+      // Set alpha channel to 255 (fully opaque) for ARGB format
       for (int i = 0; i < padding; i++) {
-        destination[destinationOffset + i] = 0;
+        destination[destinationOffset + i] = 0xFF;
       }
       for (int i = 0; i < _cpixelSize; i++) {
         destination[destinationOffset + padding + i] =
@@ -457,8 +482,9 @@ class ZrleDecoder {
       destination[destinationOffset + i] =
           cpixelBytes[cpixelOffset + i];
     }
+    // Set alpha channel to 255 (fully opaque) for BGRA format
     for (int i = _cpixelSize; i < _bytesPerPixel; i++) {
-      destination[destinationOffset + i] = 0;
+      destination[destinationOffset + i] = 0xFF;
     }
   }
 }

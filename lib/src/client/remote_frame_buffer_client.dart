@@ -210,9 +210,8 @@ class RemoteFrameBufferClient {
           bell: () {},
           frameBufferUpdate:
               (final RemoteFrameBufferFrameBufferUpdateMessage message) {
-            _updateStreamController.add(
-              RemoteFrameBufferClientUpdate(
-                rectangles: message.rectangles.map(
+            final List<RemoteFrameBufferClientUpdateRectangle> convertedRectangles =
+                message.rectangles.map(
                   (
                     final RemoteFrameBufferFrameBufferUpdateMessageRectangle
                         rectangle,
@@ -224,7 +223,10 @@ class RemoteFrameBufferClient {
                       (final ZrleDecoder decoder) => decoder,
                     ),
                   ),
-                ),
+                ).toList();
+            _updateStreamController.add(
+              RemoteFrameBufferClientUpdate(
+                rectangles: convertedRectangles,
               ),
             );
           },

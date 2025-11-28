@@ -12,7 +12,7 @@ part of 'remote_frame_buffer_client_read_message.dart';
 T _$identity<T>(T value) => value;
 
 final _privateConstructorUsedError = UnsupportedError(
-    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#custom-getters-and-methods');
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
 /// @nodoc
 mixin _$RemoteFrameBufferClientReadMessage {
@@ -112,6 +112,9 @@ class _$RemoteFrameBufferClientReadMessageCopyWithImpl<$Res,
   final $Val _value;
   // ignore: unused_field
   final $Res Function($Val) _then;
+
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
 }
 
 /// @nodoc
@@ -131,6 +134,9 @@ class __$$RemoteFrameBufferClientReadMessageBellImplCopyWithImpl<$Res>
       _$RemoteFrameBufferClientReadMessageBellImpl _value,
       $Res Function(_$RemoteFrameBufferClientReadMessageBellImpl) _then)
       : super(_value, _then);
+
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
 }
 
 /// @nodoc
@@ -145,7 +151,7 @@ class _$RemoteFrameBufferClientReadMessageBellImpl
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$RemoteFrameBufferClientReadMessageBellImpl);
@@ -290,6 +296,8 @@ class __$$RemoteFrameBufferClientReadMessageFrameBufferUpdateImplCopyWithImpl<
           _then)
       : super(_value, _then);
 
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -303,6 +311,8 @@ class __$$RemoteFrameBufferClientReadMessageFrameBufferUpdateImplCopyWithImpl<
     ));
   }
 
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
   $RemoteFrameBufferFrameBufferUpdateMessageCopyWith<$Res> get message {
@@ -329,7 +339,7 @@ class _$RemoteFrameBufferClientReadMessageFrameBufferUpdateImpl
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other
@@ -340,7 +350,9 @@ class _$RemoteFrameBufferClientReadMessageFrameBufferUpdateImpl
   @override
   int get hashCode => Object.hash(runtimeType, message);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$RemoteFrameBufferClientReadMessageFrameBufferUpdateImplCopyWith<
@@ -457,7 +469,10 @@ abstract class _RemoteFrameBufferClientReadMessageFrameBufferUpdate
       _$RemoteFrameBufferClientReadMessageFrameBufferUpdateImpl;
 
   RemoteFrameBufferFrameBufferUpdateMessage get message;
-  @JsonKey(ignore: true)
+
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$RemoteFrameBufferClientReadMessageFrameBufferUpdateImplCopyWith<
           _$RemoteFrameBufferClientReadMessageFrameBufferUpdateImpl>
       get copyWith => throw _privateConstructorUsedError;
@@ -494,6 +509,8 @@ class __$$RemoteFrameBufferClientReadMessageServerCutTextMessageImplCopyWithImpl
           _then)
       : super(_value, _then);
 
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -507,6 +524,8 @@ class __$$RemoteFrameBufferClientReadMessageServerCutTextMessageImplCopyWithImpl
     ));
   }
 
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
   $RemoteFrameBufferServerCutTextMessageCopyWith<$Res> get message {
@@ -533,7 +552,7 @@ class _$RemoteFrameBufferClientReadMessageServerCutTextMessageImpl
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other
@@ -544,7 +563,9 @@ class _$RemoteFrameBufferClientReadMessageServerCutTextMessageImpl
   @override
   int get hashCode => Object.hash(runtimeType, message);
 
-  @JsonKey(ignore: true)
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
   _$$RemoteFrameBufferClientReadMessageServerCutTextMessageImplCopyWith<
@@ -661,7 +682,10 @@ abstract class _RemoteFrameBufferClientReadMessageServerCutTextMessage
       _$RemoteFrameBufferClientReadMessageServerCutTextMessageImpl;
 
   RemoteFrameBufferServerCutTextMessage get message;
-  @JsonKey(ignore: true)
+
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   _$$RemoteFrameBufferClientReadMessageServerCutTextMessageImplCopyWith<
           _$RemoteFrameBufferClientReadMessageServerCutTextMessageImpl>
       get copyWith => throw _privateConstructorUsedError;
@@ -692,6 +716,9 @@ class __$$RemoteFrameBufferClientReadMessageSetColorMapEntriesImplCopyWithImpl<
       $Res Function(_$RemoteFrameBufferClientReadMessageSetColorMapEntriesImpl)
           _then)
       : super(_value, _then);
+
+  /// Create a copy of RemoteFrameBufferClientReadMessage
+  /// with the given fields replaced by the non-null parameter values.
 }
 
 /// @nodoc
@@ -706,7 +733,7 @@ class _$RemoteFrameBufferClientReadMessageSetColorMapEntriesImpl
   }
 
   @override
-  bool operator ==(dynamic other) {
+  bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other

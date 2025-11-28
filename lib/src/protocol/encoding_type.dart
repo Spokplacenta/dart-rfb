@@ -35,7 +35,7 @@ class RemoteFrameBufferEncodingType with _$RemoteFrameBufferEncodingType {
     }
   }
 
-  /// Generate byte representation of thie encoding type.
+  /// Generate byte representation of this encoding type.
   ByteData toBytes() => ByteData(4)
     ..setInt32(
       0,
