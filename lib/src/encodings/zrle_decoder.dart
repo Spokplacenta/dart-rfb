@@ -482,7 +482,9 @@ class ZrleDecoder {
       destination[destinationOffset + i] =
           cpixelBytes[cpixelOffset + i];
     }
-    // Set alpha channel to 255 (fully opaque) for BGRA format
+    // Set alpha channel to 255 (fully opaque) for BGRA format.
+    // This relies on _cpixelSize == 3 for 24-bit depth (RGB) and _bytesPerPixel == 4 (BGRA8888),
+    // so this correctly sets byte index 3 (alpha channel) to 0xFF.
     for (int i = _cpixelSize; i < _bytesPerPixel; i++) {
       destination[destinationOffset + i] = 0xFF;
     }
