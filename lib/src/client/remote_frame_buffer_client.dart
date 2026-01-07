@@ -58,7 +58,7 @@ class RemoteFrameBufferClient {
   Option<ZrleDecoder> _zrleDecoder = none();
 
   final RemoteFrameBufferRectangleConverter _rectangleConverter =
-      RemoteFrameBufferRectangleConverter(logger: logger);
+      RemoteFrameBufferRectangleConverter();
 
   final StreamController<String> _serverClipBoardStreamController =
       StreamController<String>();

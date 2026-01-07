@@ -7,11 +7,9 @@ import 'package:dart_rfb/src/protocol/frame_buffer_update_message.dart';
 import 'package:logging/logging.dart';
 
 class RemoteFrameBufferRectangleConverter {
-  RemoteFrameBufferRectangleConverter({
-    required final Logger logger,
-  }) : _logger = logger;
+  RemoteFrameBufferRectangleConverter();
 
-  final Logger _logger;
+  final Logger _logger = Logger('RemoteFrameBufferRectangleConverter');
 
   RemoteFrameBufferClientUpdateRectangle convert({
     required final RemoteFrameBufferFrameBufferUpdateMessageRectangle rectangle,

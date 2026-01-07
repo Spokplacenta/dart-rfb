@@ -7,15 +7,12 @@ import 'package:dart_rfb/src/encodings/zrle_decoder.dart';
 import 'package:dart_rfb/src/protocol/encoding_type.dart';
 import 'package:dart_rfb/src/protocol/frame_buffer_update_message.dart';
 import 'package:dart_rfb/src/protocol/pixel_format.dart';
-import 'package:logging/logging.dart';
 import 'package:test/expect.dart';
 import 'package:test/scaffolding.dart';
 
 void main() {
   final RemoteFrameBufferRectangleConverter converter =
-      RemoteFrameBufferRectangleConverter(
-    logger: Logger('RectangleConverterTest'),
-  );
+      RemoteFrameBufferRectangleConverter();
 
   test('convert decodes ZRLE rectangle when decoder available', () {
     final ByteData zrleData = _buildZrleData(
@@ -83,5 +80,21 @@ ByteData _buildZrleData(final List<int> decompressed) {
     ..add(compressed);
   return ByteData.sublistView(builder.toBytes());
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
