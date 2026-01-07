@@ -7,6 +7,7 @@ import 'package:dart_rfb/src/encodings/zrle_decoder.dart';
 import 'package:dart_rfb/src/protocol/encoding_type.dart';
 import 'package:dart_rfb/src/protocol/frame_buffer_update_message.dart';
 import 'package:dart_rfb/src/protocol/pixel_format.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:test/expect.dart';
 import 'package:test/scaffolding.dart';
 
@@ -34,8 +35,9 @@ void main() {
     );
     final RemoteFrameBufferClientUpdateRectangle result = converter.convert(
       rectangle: rectangle,
-      zrleDecoder:
-          ZrleDecoder(pixelFormat: RemoteFrameBufferPixelFormat.bgra8888),
+      zrleDecoder: Option.of(
+        ZrleDecoder(pixelFormat: RemoteFrameBufferPixelFormat.bgra8888),
+      ),
     );
     expect(result.encodingType, equals(const RemoteFrameBufferEncodingType.raw()));
     expect(
@@ -60,7 +62,7 @@ void main() {
     );
     final RemoteFrameBufferClientUpdateRectangle result = converter.convert(
       rectangle: rectangle,
-      zrleDecoder: null,
+      zrleDecoder: const Option.none(),
     );
     expect(
       result.encodingType,

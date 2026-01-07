@@ -218,10 +218,7 @@ class RemoteFrameBufferClient {
                   ) =>
                       _rectangleConverter.convert(
                     rectangle: rectangle,
-                    zrleDecoder: _zrleDecoder.match(
-                      () => null,
-                      (final ZrleDecoder decoder) => decoder,
-                    ),
+                    zrleDecoder: _zrleDecoder,
                   ),
                 ).toList();
             _updateStreamController.add(
