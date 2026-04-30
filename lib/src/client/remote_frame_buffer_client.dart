@@ -195,7 +195,16 @@ class RemoteFrameBufferClient {
             error,
       ).andThen(_performHandshake).run())
           .match(
-        (final Object error) => throw Exception(error),
+        (final Object error) {
+          // Conserver [SocketException] / [Error] pour l’UI ; sinon envelopper.
+          if (error is Error) {
+            throw error;
+          }
+          if (error is Exception) {
+            throw error;
+          }
+          throw Exception(error);
+        },
         (final _) {},
       );
 
