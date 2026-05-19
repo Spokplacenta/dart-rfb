@@ -35,7 +35,7 @@ void main() {
     );
     final RemoteFrameBufferClientUpdateRectangle result = converter.convert(
       rectangle: rectangle,
-      zrleDecoder: Option.of(
+      zrleDecoder: Option<ZrleDecoder>.of(
         ZrleDecoder(pixelFormat: RemoteFrameBufferPixelFormat.bgra8888),
       ),
     );
@@ -62,7 +62,7 @@ void main() {
     );
     final RemoteFrameBufferClientUpdateRectangle result = converter.convert(
       rectangle: rectangle,
-      zrleDecoder: const Option.none(),
+      zrleDecoder: const Option<ZrleDecoder>.none(),
     );
     expect(
       result.encodingType,
@@ -82,21 +82,3 @@ ByteData _buildZrleData(final List<int> decompressed) {
     ..add(compressed);
   return ByteData.sublistView(builder.toBytes());
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -269,8 +269,7 @@ class ZrleDecoder {
                 ? 4
                 : 8;
     final int pixelsPerByte = 8 ~/ bitsPerPixel;
-    final int bytesPerRow =
-        ((tileWidth + pixelsPerByte - 1) ~/ pixelsPerByte).toInt();
+    final int bytesPerRow = (tileWidth + pixelsPerByte - 1) ~/ pixelsPerByte;
     final int packedBytes = bytesPerRow * tileHeight;
     if (dataOffset + packedBytes > data.length) {
       throw const FormatException('Packed palette tile truncated');
@@ -278,7 +277,7 @@ class ZrleDecoder {
     int currentOffset = dataOffset;
     for (int row = 0; row < tileHeight; row++) {
       int shift = 8 - bitsPerPixel;
-      int rowStartOffset = currentOffset;
+      final int rowStartOffset = currentOffset;
       for (int col = 0; col < tileWidth; col++) {
         if (currentOffset >= data.length) {
           throw const FormatException('Packed palette tile data exhausted');
@@ -500,4 +499,3 @@ class _RunLengthResult {
   final int length;
   final int bytesConsumed;
 }
-
