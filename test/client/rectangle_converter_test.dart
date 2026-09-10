@@ -39,12 +39,49 @@ void main() {
         ZrleDecoder(pixelFormat: RemoteFrameBufferPixelFormat.bgra8888),
       ),
     );
-    expect(result.encodingType, equals(const RemoteFrameBufferEncodingType.raw()));
+    expect(
+      result.encodingType,
+      equals(const RemoteFrameBufferEncodingType.raw()),
+    );
     expect(
       result.byteData.buffer.asUint8List(),
       equals(
         Uint8List.fromList(
-          <int>[0xAA, 0xBB, 0xCC, 0x00],
+          <int>[0xAA, 0xBB, 0xCC, 255],
+        ),
+      ),
+    );
+  });
+
+  test('convert forces opaque alpha on raw BGRA pixels', () {
+    final ByteData pixels = ByteData(8)
+      ..setUint8(0, 0x30)
+      ..setUint8(1, 0x2c)
+      ..setUint8(2, 0x28)
+      ..setUint8(3, 0)
+      ..setUint8(4, 0x20)
+      ..setUint8(5, 0x24)
+      ..setUint8(6, 0x18)
+      ..setUint8(7, 0);
+    final RemoteFrameBufferClientUpdateRectangle result = converter.convert(
+      rectangle: RemoteFrameBufferFrameBufferUpdateMessageRectangle(
+        encodingType: const RemoteFrameBufferEncodingType.raw(),
+        height: 1,
+        pixelData: pixels,
+        width: 2,
+        x: 0,
+        y: 0,
+      ),
+      zrleDecoder: const Option<ZrleDecoder>.none(),
+    );
+    expect(
+      result.byteData.buffer.asUint8List(
+        result.byteData.offsetInBytes,
+        result.byteData.lengthInBytes,
+      ),
+      equals(
+        Uint8List.fromList(
+          <int>[0x30, 0x2c, 0x28, 255, 0x20, 0x24, 0x18, 255],
         ),
       ),
     );
@@ -68,7 +105,10 @@ void main() {
       result.encodingType,
       equals(const RemoteFrameBufferEncodingType.zrle()),
     );
-    expect(result.byteData.buffer.asUint8List(), equals(rectangle.pixelData.buffer.asUint8List()));
+    expect(
+      result.byteData.buffer.asUint8List(),
+      equals(rectangle.pixelData.buffer.asUint8List()),
+    );
   });
 }
 

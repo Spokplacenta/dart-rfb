@@ -24,7 +24,7 @@ class RemoteFrameBufferRectangleConverter {
         ),
         raw: (final _) => _buildRectangle(
           rectangle: rectangle,
-          byteData: rectangle.pixelData,
+          byteData: _opaqueBgra(rectangle.pixelData),
           encodingType: rectangle.encodingType,
         ),
         zrle: (final _) => _handleZrle(
@@ -62,7 +62,7 @@ class RemoteFrameBufferRectangleConverter {
             );
             return _buildRectangle(
               rectangle: rectangle,
-              byteData: decoded,
+              byteData: _opaqueBgra(decoded),
               encodingType: const RemoteFrameBufferEncodingType.raw(),
             );
           } on FormatException catch (error, stackTrace) {
@@ -93,4 +93,16 @@ class RemoteFrameBufferRectangleConverter {
         x: rectangle.x,
         y: rectangle.y,
       );
+
+  /// Qt VNC RGB32 is `B,G,R,0`. Flutter `bgra8888` treats byte 3 as alpha.
+  ByteData _opaqueBgra(final ByteData data) {
+    final Uint8List bytes = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
+    for (int i = 3; i < bytes.length; i += 4) {
+      bytes[i] = 255;
+    }
+    return data;
+  }
 }
