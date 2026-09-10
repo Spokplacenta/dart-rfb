@@ -674,6 +674,10 @@ class RemoteFrameBufferClient {
               RemoteFrameBufferSetPixelFormatMessage(
             pixelFormat: RemoteFrameBufferPixelFormat.bgra8888,
           );
+          _config = _config.map(
+            (final Config config) =>
+                config.copyWith(pixelFormat: message.pixelFormat),
+          );
           _zrleDecoder = some(
             ZrleDecoder(pixelFormat: message.pixelFormat),
           );

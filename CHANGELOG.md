@@ -49,5 +49,9 @@
 - Upgrade `binary` to 4.0.0
 - Manage Dart SDK via `fvm`
 
+## 0.9.1
+- Align `Config.pixelFormat` with the `SetPixelFormat` sent after ServerInit (fixes Raw rectangles on 16 bpp servers)
+- Force opaque alpha on Raw BGRA pixels (Qt VNC RGB32 sends alpha 0)
+
 ## 0.9.0
 - Add full support for the ZRLE encoding ( thanks @Spokplacenta )
