@@ -24,9 +24,44 @@ class RemoteFrameBufferPixelFormat with _$RemoteFrameBufferPixelFormat {
     required final int blueShift,
   }) = _RemoteFrameBufferPixelFormat;
 
-  /// This corresponds to Flutter's `PixelFormat.bgra8888`.
-  static RemoteFrameBufferPixelFormat bgra8888 =
-      const RemoteFrameBufferPixelFormat(
+  /// 8 bpp, 2 bits per component (64 colours): the format RealVNC Viewer
+  /// requests on a slow link (depth 6, max 3/3/3, shifts 4/2/0).
+  ///
+  /// Not the classic BGR233 (3/3/2 bits): servers accept this one, as seen
+  /// with RealVNC. About 4 times less data than [bgra8888].
+  static const RemoteFrameBufferPixelFormat bgr233 =
+      RemoteFrameBufferPixelFormat(
+    bitsPerPixel: 8,
+    depth: 6,
+    bigEndian: false,
+    trueColor: true,
+    redMax: 3,
+    greenMax: 3,
+    blueMax: 3,
+    redShift: 4,
+    greenShift: 2,
+    blueShift: 0,
+  );
+
+  /// 16 bpp RGB565, little endian. About 1.5 times less data than
+  /// [bgra8888] with ZRLE (2-byte instead of 3-byte CPIXELs).
+  static const RemoteFrameBufferPixelFormat rgb565 =
+      RemoteFrameBufferPixelFormat(
+    bitsPerPixel: 16,
+    depth: 16,
+    bigEndian: false,
+    trueColor: true,
+    redMax: 31,
+    greenMax: 63,
+    blueMax: 31,
+    redShift: 11,
+    greenShift: 5,
+    blueShift: 0,
+  );
+
+  /// 32 bpp, depth 24. This corresponds to Flutter's `PixelFormat.bgra8888`.
+  static const RemoteFrameBufferPixelFormat bgra8888 =
+      RemoteFrameBufferPixelFormat(
     bitsPerPixel: 32,
     depth: 24,
     bigEndian: false,

@@ -44,7 +44,7 @@ void main() {
       result.byteData.buffer.asUint8List(),
       equals(
         Uint8List.fromList(
-          <int>[0xAA, 0xBB, 0xCC, 0x00],
+          <int>[0xAA, 0xBB, 0xCC, 0xFF],
         ),
       ),
     );

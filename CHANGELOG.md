@@ -51,3 +51,16 @@
 
 ## 0.9.0
 - Add full support for the ZRLE encoding ( thanks @Spokplacenta )
+
+## Unreleased
+
+- Enable `TCP_NODELAY` on the client socket: small messages (pointer, keys, update requests) no longer wait for the ACK of the previous one (Nagle)
+- Pipeline framebuffer update requests: the client sends the next incremental `FramebufferUpdateRequest` as soon as it reads the header of an update, instead of waiting for the caller to finish rendering. New `RemoteFrameBufferClient(pipelineUpdateRequests:)` option, `true` by default; with it, call `requestUpdate()` once after `handleIncomingMessages()`
+- Fix: `config.pixelFormat` is the format set with SetPixelFormat (32 bpp), so Raw rectangle sizes no longer use the server's native bits per pixel
+- Fix: wait for the colors of a `SetColorMapEntries` message before reading the next message
+- Fix: retry partial socket writes (`SocketWriter`), in order, instead of truncating messages
+- Tests: fix stale ZRLE expectations (opaque alpha, one decoder per zlib stream)
+- **Breaking default**: the client asks for 16 bpp RGB565 by default instead of 32 bpp. New `RemoteFrameBufferClient(pixelFormat:)` option with the presets `RemoteFrameBufferPixelFormat.rgb565` (default), `.bgr233` (8 bpp, 2 bits per component, as RealVNC Viewer on slow links) and `.bgra8888` (the previous format). Updates are still delivered as opaque BGRA8888 pixels, whatever the format
+- ZRLE: CPIXEL of 1, 2 or 3 bytes depending on the pixel format (RFC 6143 §7.7.6); Raw rectangles are converted to BGRA8888 too, through a lookup table at 8 and 16 bpp (`PixelConverter`)
+- ZRLE decoder writes 32-bit pixels directly (`Uint32List`, `fillRange` for solid tiles and runs, reused palette) and inflates without a `List<int>` copy: 3 to 5 times faster
+- `RemoteFrameBufferPixelFormat.bgra8888` is now `const`

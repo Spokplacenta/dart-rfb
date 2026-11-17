@@ -7,11 +7,13 @@ import 'package:test/expect.dart';
 import 'package:test/scaffolding.dart';
 
 void main() {
-  final RemoteFrameBufferPixelFormat pixelFormat =
+  const RemoteFrameBufferPixelFormat pixelFormat =
       RemoteFrameBufferPixelFormat.bgra8888;
-  final ZrleDecoder decoder = ZrleDecoder(pixelFormat: pixelFormat);
 
   test('decodes raw tile', () {
+    // One decoder per zlib stream: the inflater is persistent (one per
+    // connection), and each test builds its own complete zlib stream.
+    final ZrleDecoder decoder = ZrleDecoder(pixelFormat: pixelFormat);
     final ByteData zrleData = _buildZrleData(
       <int>[
         0, // raw tile
@@ -36,11 +38,11 @@ void main() {
             0x01,
             0x02,
             0x03,
-            0x00,
+            0xFF,
             0x10,
             0x20,
             0x30,
-            0x00,
+            0xFF,
           ],
         ),
       ),
@@ -48,6 +50,7 @@ void main() {
   });
 
   test('decodes plain RLE tile', () {
+    final ZrleDecoder decoder = ZrleDecoder(pixelFormat: pixelFormat);
     final ByteData zrleData = _buildZrleData(
       <int>[
         128, // plain RLE tile
@@ -70,11 +73,11 @@ void main() {
             0x0A,
             0x0B,
             0x0C,
-            0x00,
+            0xFF,
             0x0A,
             0x0B,
             0x0C,
-            0x00,
+            0xFF,
           ],
         ),
       ),

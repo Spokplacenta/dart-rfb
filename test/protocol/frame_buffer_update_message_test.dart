@@ -29,7 +29,7 @@ void main() {
     final Either<Object, RemoteFrameBufferFrameBufferUpdateMessage> message =
         await runFakeAsync(
       (final _) => RemoteFrameBufferFrameBufferUpdateMessage.readFromSocket(
-        config: Config(
+        config: const Config(
           frameBufferHeight: 1,
           frameBufferWidth: 1,
           pixelFormat: RemoteFrameBufferPixelFormat.bgra8888,
@@ -75,7 +75,7 @@ void main() {
     final Either<Object, RemoteFrameBufferFrameBufferUpdateMessage> message =
         await runFakeAsync(
       (final _) => RemoteFrameBufferFrameBufferUpdateMessage.readFromSocket(
-        config: Config(
+        config: const Config(
           frameBufferHeight: 1,
           frameBufferWidth: 1,
           pixelFormat: RemoteFrameBufferPixelFormat.bgra8888,

@@ -2,12 +2,14 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:dart_rfb/src/encodings/pixel_converter.dart';
 import 'package:dart_rfb/src/protocol/pixel_format.dart';
 
 /// Decoder for ZRLE rectangles (see RFC 6143 §7.7.6.9).
 ///
-/// The decoder currently assumes little-endian pixel formats, which matches the
-/// `bgra8888` format negotiated by the client.
+/// Supports the 8, 16 and 32 bpp true colour formats of [PixelConverter]. The
+/// output is always opaque BGRA8888, 4 bytes per pixel, whatever the
+/// negotiated format.
 ///
 /// IMPORTANT: ZRLE uses a continuous zlib stream across all rectangles in a
 /// session. The [_inflater] must be reused for all decode() calls. Call
@@ -15,22 +17,42 @@ import 'package:dart_rfb/src/protocol/pixel_format.dart';
 class ZrleDecoder {
   ZrleDecoder({
     required final RemoteFrameBufferPixelFormat pixelFormat,
-  })  : _pixelFormat = pixelFormat,
-        _bytesPerPixel = (pixelFormat.bitsPerPixel / 8).ceil(),
-        _cpixelSize = (pixelFormat.depth + 7) ~/ 8,
+  }) : this.withConverter(
+          converter: PixelConverter(pixelFormat: pixelFormat),
+        );
+
+  /// A decoder sharing [converter] (and its lookup table) with the caller.
+  ZrleDecoder.withConverter({required final PixelConverter converter})
+      : _converter = converter,
+        _cpixelSize = cpixelSize(converter.pixelFormat),
         _inflater = RawZLibFilter.inflateFilter();
 
-  final RemoteFrameBufferPixelFormat _pixelFormat;
-  final int _bytesPerPixel;
+  final PixelConverter _converter;
   final int _cpixelSize;
   RawZLibFilter _inflater;
+
+  /// Palette of the current tile, reused from tile to tile.
+  final Uint32List _palette = Uint32List(128);
+
+  /// Size of a CPIXEL in [pixelFormat].
+  ///
+  /// RFC 6143 §7.7.6: a CPIXEL is 3 bytes for a true colour 32 bpp format
+  /// whose colours fit in 24 bits, otherwise a full pixel (1 or 2 bytes at
+  /// 8 or 16 bpp).
+  static int cpixelSize(final RemoteFrameBufferPixelFormat pixelFormat) =>
+      pixelFormat.trueColor &&
+              pixelFormat.bitsPerPixel == 32 &&
+              pixelFormat.depth <= 24
+          ? 3
+          : pixelFormat.bitsPerPixel ~/ 8;
 
   /// Reset the zlib inflater. Call this when starting a new VNC session.
   void reset() {
     _inflater = RawZLibFilter.inflateFilter();
   }
 
-  /// Decode [zrleData] (length + compressed payload) into raw pixel bytes.
+  /// Decode [zrleData] (length + compressed payload) into opaque BGRA8888
+  /// pixel bytes.
   ByteData decode({
     required final ByteData zrleData,
     required final int width,
@@ -47,12 +69,12 @@ class ZrleDecoder {
       zrleData.offsetInBytes + 4,
       declaredLength,
     );
+    final Uint32List frameBuffer = Uint32List(width * height);
     if (compressedPayload.isEmpty) {
-      return ByteData(width * height * _bytesPerPixel);
+      return ByteData.sublistView(frameBuffer);
     }
     // Use persistent inflater for continuous zlib stream
     final Uint8List decompressed = _inflate(compressedPayload);
-    final Uint8List frameBuffer = Uint8List(width * height * _bytesPerPixel);
 
     int offset = 0;
     for (int tileY = 0; tileY < height; tileY += 64) {
@@ -62,17 +84,16 @@ class ZrleDecoder {
         offset = _decodeTile(
           data: decompressed,
           offset: offset,
-          tileX: tileX,
-          tileY: tileY,
-          tileWidth: tileWidth,
-          tileHeight: tileHeight,
-          frameBuffer: frameBuffer,
-          frameWidth: width,
+          tile: _Tile(
+            frameBuffer: frameBuffer,
+            frameWidth: width,
+            height: tileHeight,
+            width: tileWidth,
+            x: tileX,
+            y: tileY,
+          ),
         );
       }
-    }
-    if (offset > decompressed.length) {
-      throw const FormatException('ZRLE payload shorter than expected');
     }
     return ByteData.sublistView(frameBuffer);
   }
@@ -80,25 +101,40 @@ class ZrleDecoder {
   /// Inflate compressed data using persistent zlib stream.
   Uint8List _inflate(final Uint8List compressed) {
     _inflater.process(compressed, 0, compressed.length);
-    final List<int> output = <int>[];
+    final BytesBuilder output = BytesBuilder(copy: false);
     List<int>? chunk;
     // For continuous zlib stream, we need to flush to get all available data
     // but not finalize the stream (which would be flush: true)
     while ((chunk = _inflater.processed(flush: true)) != null) {
-      output.addAll(chunk!);
+      output.add(chunk!);
     }
-    return Uint8List.fromList(output);
+    return output.takeBytes();
+  }
+
+  /// Reads the CPIXEL at [offset] as an opaque BGRA8888 value.
+  int _readCpixel(final Uint8List data, final int offset) =>
+      _converter.convert(_converter.readPixel(data, offset, _cpixelSize));
+
+  int _readPalette({
+    required final Uint8List data,
+    required final int offset,
+    required final int paletteSize,
+    required final String description,
+  }) {
+    final int paletteBytes = paletteSize * _cpixelSize;
+    if (offset + paletteBytes > data.length) {
+      throw FormatException('$description tile missing palette data');
+    }
+    for (int i = 0; i < paletteSize; i++) {
+      _palette[i] = _readCpixel(data, offset + i * _cpixelSize);
+    }
+    return offset + paletteBytes;
   }
 
   int _decodeTile({
     required final Uint8List data,
     required final int offset,
-    required final int tileX,
-    required final int tileY,
-    required final int tileWidth,
-    required final int tileHeight,
-    required final Uint8List frameBuffer,
-    required final int frameWidth,
+    required final _Tile tile,
   }) {
     if (offset >= data.length) {
       throw const FormatException('Unexpected end of ZRLE payload (tile type)');
@@ -106,61 +142,24 @@ class ZrleDecoder {
     final int type = data[offset];
     final int tileOffset = offset + 1;
     if (type == 0) {
-      return _decodeRawTile(
-        data: data,
-        offset: tileOffset,
-        tileX: tileX,
-        tileY: tileY,
-        tileWidth: tileWidth,
-        tileHeight: tileHeight,
-        frameBuffer: frameBuffer,
-        frameWidth: frameWidth,
-      );
+      return _decodeRawTile(data: data, offset: tileOffset, tile: tile);
     } else if (type == 1) {
-      return _decodeSolidTile(
-        data: data,
-        offset: tileOffset,
-        tileX: tileX,
-        tileY: tileY,
-        tileWidth: tileWidth,
-        tileHeight: tileHeight,
-        frameBuffer: frameBuffer,
-        frameWidth: frameWidth,
-      );
-    } else if (type >= 2 && type <= 127) {
+      return _decodeSolidTile(data: data, offset: tileOffset, tile: tile);
+    } else if (type >= 2 && type <= 16) {
       return _decodePackedPaletteTile(
         data: data,
         offset: tileOffset,
         paletteSize: type,
-        tileX: tileX,
-        tileY: tileY,
-        tileWidth: tileWidth,
-        tileHeight: tileHeight,
-        frameBuffer: frameBuffer,
-        frameWidth: frameWidth,
+        tile: tile,
       );
     } else if (type == 128) {
-      return _decodePlainRleTile(
-        data: data,
-        offset: tileOffset,
-        tileX: tileX,
-        tileY: tileY,
-        tileWidth: tileWidth,
-        tileHeight: tileHeight,
-        frameBuffer: frameBuffer,
-        frameWidth: frameWidth,
-      );
+      return _decodePlainRleTile(data: data, offset: tileOffset, tile: tile);
     } else if (type >= 130 && type <= 255) {
       return _decodePaletteRleTile(
         data: data,
         offset: tileOffset,
         paletteSize: type - 128,
-        tileX: tileX,
-        tileY: tileY,
-        tileWidth: tileWidth,
-        tileHeight: tileHeight,
-        frameBuffer: frameBuffer,
-        frameWidth: frameWidth,
+        tile: tile,
       );
     }
     throw FormatException('Unsupported ZRLE tile type: $type');
@@ -169,29 +168,16 @@ class ZrleDecoder {
   int _decodeRawTile({
     required final Uint8List data,
     required final int offset,
-    required final int tileX,
-    required final int tileY,
-    required final int tileWidth,
-    required final int tileHeight,
-    required final Uint8List frameBuffer,
-    required final int frameWidth,
+    required final _Tile tile,
   }) {
-    final int pixels = tileWidth * tileHeight;
-    final int bytesNeeded = pixels * _cpixelSize;
-    if (offset + bytesNeeded > data.length) {
+    if (offset + tile.width * tile.height * _cpixelSize > data.length) {
       throw const FormatException('Raw tile truncated');
     }
     int currentOffset = offset;
-    for (int row = 0; row < tileHeight; row++) {
-      for (int col = 0; col < tileWidth; col++) {
-        final int dstOffset = ((tileY + row) * frameWidth + tileX + col) *
-            _bytesPerPixel;
-        _writeCpixelToFrame(
-          cpixelBytes: data,
-          cpixelOffset: currentOffset,
-          destination: frameBuffer,
-          destinationOffset: dstOffset,
-        );
+    for (int row = 0; row < tile.height; row++) {
+      int destination = tile.rowStart(row);
+      for (int col = 0; col < tile.width; col++) {
+        tile.frameBuffer[destination++] = _readCpixel(data, currentOffset);
         currentOffset += _cpixelSize;
       }
     }
@@ -201,33 +187,15 @@ class ZrleDecoder {
   int _decodeSolidTile({
     required final Uint8List data,
     required final int offset,
-    required final int tileX,
-    required final int tileY,
-    required final int tileWidth,
-    required final int tileHeight,
-    required final Uint8List frameBuffer,
-    required final int frameWidth,
+    required final _Tile tile,
   }) {
     if (offset + _cpixelSize > data.length) {
       throw const FormatException('Solid tile missing color');
     }
-    final Uint8List color = Uint8List(_bytesPerPixel);
-    _writeCpixelToFrame(
-      cpixelBytes: data,
-      cpixelOffset: offset,
-      destination: color,
-      destinationOffset: 0,
-    );
-    for (int row = 0; row < tileHeight; row++) {
-      for (int col = 0; col < tileWidth; col++) {
-        final int dstOffset = ((tileY + row) * frameWidth + tileX + col) *
-            _bytesPerPixel;
-        frameBuffer.setRange(
-          dstOffset,
-          dstOffset + _bytesPerPixel,
-          color,
-        );
-      }
+    final int color = _readCpixel(data, offset);
+    for (int row = 0; row < tile.height; row++) {
+      final int start = tile.rowStart(row);
+      tile.frameBuffer.fillRange(start, start + tile.width, color);
     }
     return offset + _cpixelSize;
   }
@@ -236,101 +204,60 @@ class ZrleDecoder {
     required final Uint8List data,
     required final int offset,
     required final int paletteSize,
-    required final int tileX,
-    required final int tileY,
-    required final int tileWidth,
-    required final int tileHeight,
-    required final Uint8List frameBuffer,
-    required final int frameWidth,
+    required final _Tile tile,
   }) {
-    final int paletteBytes = paletteSize * _cpixelSize;
-    if (offset + paletteBytes > data.length) {
-      throw const FormatException('Packed palette tile missing palette data');
-    }
-    final List<Uint8List> palette = List<Uint8List>.generate(
-      paletteSize,
-      (final int index) {
-        final Uint8List color = Uint8List(_bytesPerPixel);
-        _writeCpixelToFrame(
-          cpixelBytes: data,
-          cpixelOffset: offset + index * _cpixelSize,
-          destination: color,
-          destinationOffset: 0,
-        );
-        return color;
-      },
+    final int dataOffset = _readPalette(
+      data: data,
+      offset: offset,
+      paletteSize: paletteSize,
+      description: 'Packed palette',
     );
-    final int dataOffset = offset + paletteBytes;
-    final int bitsPerPixel = paletteSize <= 2
+    final int bitsPerIndex = paletteSize <= 2
         ? 1
         : paletteSize <= 4
             ? 2
-            : paletteSize <= 16
-                ? 4
-                : 8;
-    final int pixelsPerByte = 8 ~/ bitsPerPixel;
-    final int bytesPerRow = (tileWidth + pixelsPerByte - 1) ~/ pixelsPerByte;
-    final int packedBytes = bytesPerRow * tileHeight;
-    if (dataOffset + packedBytes > data.length) {
+            : 4;
+    final int mask = (1 << bitsPerIndex) - 1;
+    final int bytesPerRow = (tile.width * bitsPerIndex + 7) ~/ 8;
+    if (dataOffset + bytesPerRow * tile.height > data.length) {
       throw const FormatException('Packed palette tile truncated');
     }
-    int currentOffset = dataOffset;
-    for (int row = 0; row < tileHeight; row++) {
-      int shift = 8 - bitsPerPixel;
-      final int rowStartOffset = currentOffset;
-      for (int col = 0; col < tileWidth; col++) {
-        if (currentOffset >= data.length) {
-          throw const FormatException('Packed palette tile data exhausted');
-        }
-        final int byteValue = data[currentOffset];
-        final int paletteIndex =
-            (byteValue >> shift) & ((1 << bitsPerPixel) - 1);
-        if (paletteIndex >= palette.length) {
+    int rowOffset = dataOffset;
+    for (int row = 0; row < tile.height; row++) {
+      int destination = tile.rowStart(row);
+      int byteOffset = rowOffset;
+      int shift = 8 - bitsPerIndex;
+      for (int col = 0; col < tile.width; col++) {
+        final int paletteIndex = (data[byteOffset] >> shift) & mask;
+        if (paletteIndex >= paletteSize) {
           throw const FormatException('Packed palette index out of range');
         }
-        final int dstOffset =
-            ((tileY + row) * frameWidth + tileX + col) * _bytesPerPixel;
-        frameBuffer.setRange(
-          dstOffset,
-          dstOffset + _bytesPerPixel,
-          palette[paletteIndex],
-        );
-        shift -= bitsPerPixel;
+        tile.frameBuffer[destination++] = _palette[paletteIndex];
+        shift -= bitsPerIndex;
         if (shift < 0) {
-          shift = 8 - bitsPerPixel;
-          currentOffset++;
+          shift = 8 - bitsPerIndex;
+          byteOffset++;
         }
       }
       // Each row is padded to byte boundary
-      currentOffset = rowStartOffset + bytesPerRow;
+      rowOffset += bytesPerRow;
     }
-    return currentOffset;
+    return rowOffset;
   }
 
   int _decodePlainRleTile({
     required final Uint8List data,
     required final int offset,
-    required final int tileX,
-    required final int tileY,
-    required final int tileWidth,
-    required final int tileHeight,
-    required final Uint8List frameBuffer,
-    required final int frameWidth,
+    required final _Tile tile,
   }) {
     int currentOffset = offset;
-    int row = 0;
-    int col = 0;
-    final Uint8List colorBuffer = Uint8List(_bytesPerPixel);
-    while (row < tileHeight) {
+    int position = 0;
+    final int pixelCount = tile.width * tile.height;
+    while (position < pixelCount) {
       if (currentOffset + _cpixelSize > data.length) {
         throw const FormatException('Plain RLE tile truncated (color)');
       }
-      _writeCpixelToFrame(
-        cpixelBytes: data,
-        cpixelOffset: currentOffset,
-        destination: colorBuffer,
-        destinationOffset: 0,
-      );
+      final int color = _readCpixel(data, currentOffset);
       currentOffset += _cpixelSize;
       final _RunLengthResult run = _readRunLength(
         data: data,
@@ -338,25 +265,11 @@ class ZrleDecoder {
         description: 'Plain RLE length',
       );
       currentOffset += run.bytesConsumed;
-      int remaining = run.length;
-      while (remaining > 0) {
-        if (row >= tileHeight) {
-          throw const FormatException('Plain RLE overruns tile height');
-        }
-        final int dstOffset =
-            ((tileY + row) * frameWidth + tileX + col) * _bytesPerPixel;
-        frameBuffer.setRange(
-          dstOffset,
-          dstOffset + _bytesPerPixel,
-          colorBuffer,
-        );
-        col++;
-        if (col >= tileWidth) {
-          col = 0;
-          row++;
-        }
-        remaining--;
+      if (position + run.length > pixelCount) {
+        throw const FormatException('Plain RLE overruns tile height');
       }
+      tile.fillRun(position, run.length, color);
+      position += run.length;
     }
     return currentOffset;
   }
@@ -365,45 +278,27 @@ class ZrleDecoder {
     required final Uint8List data,
     required final int offset,
     required final int paletteSize,
-    required final int tileX,
-    required final int tileY,
-    required final int tileWidth,
-    required final int tileHeight,
-    required final Uint8List frameBuffer,
-    required final int frameWidth,
+    required final _Tile tile,
   }) {
-    final int paletteBytes = paletteSize * _cpixelSize;
-    if (offset + paletteBytes > data.length) {
-      throw const FormatException('Palette RLE tile missing palette data');
-    }
-    final List<Uint8List> palette = List<Uint8List>.generate(
-      paletteSize,
-      (final int index) {
-        final Uint8List color = Uint8List(_bytesPerPixel);
-        _writeCpixelToFrame(
-          cpixelBytes: data,
-          cpixelOffset: offset + index * _cpixelSize,
-          destination: color,
-          destinationOffset: 0,
-        );
-        return color;
-      },
+    int currentOffset = _readPalette(
+      data: data,
+      offset: offset,
+      paletteSize: paletteSize,
+      description: 'Palette RLE',
     );
-    int currentOffset = offset + paletteBytes;
-    int row = 0;
-    int col = 0;
-    while (row < tileHeight) {
+    int position = 0;
+    final int pixelCount = tile.width * tile.height;
+    while (position < pixelCount) {
       if (currentOffset >= data.length) {
         throw const FormatException('Palette RLE tile truncated (entry)');
       }
       final int entry = data[currentOffset++];
-      final bool isRun = (entry & 0x80) != 0;
       final int paletteIndex = entry & 0x7F;
-      if (paletteIndex >= palette.length) {
+      if (paletteIndex >= paletteSize) {
         throw const FormatException('Palette RLE index out of range');
       }
       int runLength = 1;
-      if (isRun) {
+      if ((entry & 0x80) != 0) {
         final _RunLengthResult run = _readRunLength(
           data: data,
           offset: currentOffset,
@@ -412,25 +307,11 @@ class ZrleDecoder {
         runLength = run.length;
         currentOffset += run.bytesConsumed;
       }
-      int remaining = runLength;
-      while (remaining > 0) {
-        if (row >= tileHeight) {
-          throw const FormatException('Palette RLE overruns tile height');
-        }
-        final int dstOffset =
-            ((tileY + row) * frameWidth + tileX + col) * _bytesPerPixel;
-        frameBuffer.setRange(
-          dstOffset,
-          dstOffset + _bytesPerPixel,
-          palette[paletteIndex],
-        );
-        col++;
-        if (col >= tileWidth) {
-          col = 0;
-          row++;
-        }
-        remaining--;
+      if (position + runLength > pixelCount) {
+        throw const FormatException('Palette RLE overruns tile height');
       }
+      tile.fillRun(position, runLength, _palette[paletteIndex]);
+      position += runLength;
     }
     return currentOffset;
   }
@@ -458,34 +339,42 @@ class ZrleDecoder {
     consumed++;
     return _RunLengthResult(length: length, bytesConsumed: consumed);
   }
+}
 
-  void _writeCpixelToFrame({
-    required final Uint8List cpixelBytes,
-    required final int cpixelOffset,
-    required final Uint8List destination,
-    required final int destinationOffset,
-  }) {
-    if (_pixelFormat.bigEndian) {
-      final int padding = _bytesPerPixel - _cpixelSize;
-      // Set alpha channel to 255 (fully opaque) for ARGB format
-      for (int i = 0; i < padding; i++) {
-        destination[destinationOffset + i] = 0xFF;
-      }
-      for (int i = 0; i < _cpixelSize; i++) {
-        destination[destinationOffset + padding + i] =
-            cpixelBytes[cpixelOffset + i];
-      }
-      return;
-    }
-    for (int i = 0; i < _cpixelSize; i++) {
-      destination[destinationOffset + i] =
-          cpixelBytes[cpixelOffset + i];
-    }
-    // Set alpha channel to 255 (fully opaque) for BGRA format.
-    // This relies on _cpixelSize == 3 for 24-bit depth (RGB) and _bytesPerPixel == 4 (BGRA8888),
-    // so this correctly sets byte index 3 (alpha channel) to 0xFF.
-    for (int i = _cpixelSize; i < _bytesPerPixel; i++) {
-      destination[destinationOffset + i] = 0xFF;
+/// A tile of the rectangle being decoded, in [frameBuffer].
+class _Tile {
+  const _Tile({
+    required this.frameBuffer,
+    required this.frameWidth,
+    required this.height,
+    required this.width,
+    required this.x,
+    required this.y,
+  });
+
+  final Uint32List frameBuffer;
+  final int frameWidth;
+  final int height;
+  final int width;
+  final int x;
+  final int y;
+
+  /// Index in [frameBuffer] of the first pixel of [row].
+  int rowStart(final int row) => (y + row) * frameWidth + x;
+
+  /// Fills [length] pixels with [color], from pixel [position] of the tile in
+  /// row-major order, across rows.
+  void fillRun(final int position, final int length, final int color) {
+    int row = position ~/ width;
+    int col = position % width;
+    int remaining = length;
+    while (remaining > 0) {
+      final int count = min(remaining, width - col);
+      final int start = rowStart(row) + col;
+      frameBuffer.fillRange(start, start + count, color);
+      remaining -= count;
+      col = 0;
+      row++;
     }
   }
 }

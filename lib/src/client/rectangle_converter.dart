@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dart_rfb/src/client/remote_frame_buffer_client_update.dart';
+import 'package:dart_rfb/src/encodings/pixel_converter.dart';
 import 'package:dart_rfb/src/encodings/zrle_decoder.dart';
 import 'package:dart_rfb/src/protocol/encoding_type.dart';
 import 'package:dart_rfb/src/protocol/frame_buffer_update_message.dart';
@@ -12,9 +13,13 @@ class RemoteFrameBufferRectangleConverter {
 
   final Logger _logger = Logger('RemoteFrameBufferRectangleConverter');
 
+  /// Converts [rectangle] into a rectangle the caller can draw: ZRLE is
+  /// decoded with [zrleDecoder], and Raw pixels are converted to opaque
+  /// BGRA8888 with [pixelConverter] (left untouched without one).
   RemoteFrameBufferClientUpdateRectangle convert({
     required final RemoteFrameBufferFrameBufferUpdateMessageRectangle rectangle,
     required final Option<ZrleDecoder> zrleDecoder,
+    final Option<PixelConverter> pixelConverter = const None<PixelConverter>(),
   }) =>
       rectangle.encodingType.map(
         copyRect: (final _) => _buildRectangle(
@@ -24,7 +29,14 @@ class RemoteFrameBufferRectangleConverter {
         ),
         raw: (final _) => _buildRectangle(
           rectangle: rectangle,
-          byteData: rectangle.pixelData,
+          byteData: pixelConverter.match(
+            () => rectangle.pixelData,
+            (final PixelConverter converter) => converter.convertRaw(
+              pixelData: rectangle.pixelData,
+              width: rectangle.width,
+              height: rectangle.height,
+            ),
+          ),
           encodingType: rectangle.encodingType,
         ),
         zrle: (final _) => _handleZrle(

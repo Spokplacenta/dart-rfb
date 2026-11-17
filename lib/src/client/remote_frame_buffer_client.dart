@@ -11,7 +11,9 @@ import 'package:dart_rfb/src/client/remote_frame_buffer_client_key_event.dart';
 import 'package:dart_rfb/src/client/remote_frame_buffer_client_pointer_event.dart';
 import 'package:dart_rfb/src/client/remote_frame_buffer_client_read_message.dart';
 import 'package:dart_rfb/src/client/remote_frame_buffer_client_update.dart';
+import 'package:dart_rfb/src/client/socket_writer.dart';
 import 'package:dart_rfb/src/constants.dart';
+import 'package:dart_rfb/src/encodings/pixel_converter.dart';
 import 'package:dart_rfb/src/encodings/zrle_decoder.dart';
 import 'package:dart_rfb/src/extensions/byte_data_extensions.dart';
 import 'package:dart_rfb/src/extensions/int_extensions.dart';
@@ -34,6 +36,7 @@ import 'package:dart_rfb/src/protocol/set_encodings_message.dart';
 import 'package:dart_rfb/src/protocol/set_pixel_format_message.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:logging/logging.dart';
+import 'package:meta/meta.dart';
 
 /// A client that implements communication according to
 /// The Remote Framebuffer Protocol, aka RFC 6143, aka VNC).
@@ -47,6 +50,12 @@ class RemoteFrameBufferClient {
 
   Option<String> _password = none();
 
+  final bool _pipelineUpdateRequests;
+
+  final RemoteFrameBufferPixelFormat _pixelFormat;
+
+  Option<PixelConverter> _pixelConverter = none();
+
   bool _readLoopRunning = false;
 
   Option<RemoteFrameBufferProtocolVersion> _selectedProtocolVersion = none();
@@ -54,6 +63,8 @@ class RemoteFrameBufferClient {
   Option<RemoteFrameBufferSecurityType> _selectedSecurityType = none();
 
   Option<RawSocket> _socket = none();
+
+  Option<SocketWriter> _writer = none();
 
   Option<ZrleDecoder> _zrleDecoder = none();
 
@@ -67,8 +78,41 @@ class RemoteFrameBufferClient {
       _updateStreamController =
       StreamController<RemoteFrameBufferClientUpdate>.broadcast();
 
+  /// Creates a client.
+  ///
+  /// With [pipelineUpdateRequests] (the default), the client sends the next
+  /// incremental [requestUpdate] itself as soon as it reads the header of a
+  /// framebuffer update, while the server is still sending the rectangles.
+  /// One request is thus always pending on the server, which no longer waits
+  /// for the client to finish rendering: call [requestUpdate] once to start.
+  /// Set it to `false` to send every request yourself.
+  ///
+  /// [pixelFormat] is the format asked to the server with SetPixelFormat:
+  /// [RemoteFrameBufferPixelFormat.rgb565] (the default),
+  /// [RemoteFrameBufferPixelFormat.bgr233] or
+  /// [RemoteFrameBufferPixelFormat.bgra8888]. A smaller format means less data
+  /// on slow links. Whatever the format, updates are delivered as opaque
+  /// BGRA8888 pixels. Only true colour formats of 8, 16 or 32 bits per pixel
+  /// are supported.
+  RemoteFrameBufferClient({
+    final bool pipelineUpdateRequests = true,
+    final RemoteFrameBufferPixelFormat pixelFormat =
+        RemoteFrameBufferPixelFormat.rgb565,
+  })  : _pipelineUpdateRequests = pipelineUpdateRequests,
+        _pixelFormat = pixelFormat {
+    // Fail now rather than after the handshake.
+    PixelConverter(pixelFormat: pixelFormat);
+  }
+
   /// The config used by the underlying session.
   Option<Config> get config => _config;
+
+  /// Whether update requests are pipelined, see [RemoteFrameBufferClient.new].
+  bool get pipelineUpdateRequests => _pipelineUpdateRequests;
+
+  /// The underlying socket, once connected.
+  @visibleForTesting
+  Option<RawSocket> get socket => _socket;
 
   /// Start the reading loop that reads incoming protocol messages.
   /// You can then call [handleIncomingMessages] to let the package handle
@@ -95,6 +139,11 @@ class RemoteFrameBufferClient {
             case 0:
               // read and ignore padding
               await socket.readSync(length: 1).run();
+              if (_pipelineUpdateRequests) {
+                // Ask for the next update now rather than after rendering, so
+                // the server never waits for a round trip.
+                requestUpdate();
+              }
               yield (await RemoteFrameBufferFrameBufferUpdateMessage
                           .readFromSocket(config: config, socket: socket)
                       .run())
@@ -117,7 +166,7 @@ class RemoteFrameBufferClient {
             case 1: // SetColorMapEntries
               final int numberOfColors =
                   (await socket.readSync(length: 5).run()).getUint16(3);
-              socket.readSync(length: numberOfColors * 6);
+              await socket.readSync(length: numberOfColors * 6).run();
               yield const RemoteFrameBufferClientReadMessage
                   .setColorMapEntries();
               break;
@@ -160,6 +209,7 @@ class RemoteFrameBufferClient {
   /// Dispose the currently active session and all used resources.
   Future<void> close() async {
     _readLoopRunning = false;
+    _writer.match(() {}, (final SocketWriter writer) => writer.close());
     await _incomingMessagesSubscription.match(
       () {},
       (
@@ -181,12 +231,15 @@ class RemoteFrameBufferClient {
       (await TaskEither<Object, void>.tryCatch(
         () async {
           _password = optionOf(password);
-          _socket = some(
-            await RawSocket.connect(
-              hostname,
-              port,
-            ),
+          final RawSocket socket = await RawSocket.connect(
+            hostname,
+            port,
           );
+          // Small messages (pointer, keys, update requests) must leave at once,
+          // not wait for the ACK of the previous one (Nagle).
+          socket.setOption(SocketOption.tcpNoDelay, true);
+          _socket = some(socket);
+          _writer = some(SocketWriter(socket: socket));
         },
         (
           final Object error,
@@ -228,6 +281,7 @@ class RemoteFrameBufferClient {
                       _rectangleConverter.convert(
                     rectangle: rectangle,
                     zrleDecoder: _zrleDecoder,
+                    pixelConverter: _pixelConverter,
                   ),
                 ).toList();
             _updateStreamController.add(
@@ -246,10 +300,12 @@ class RemoteFrameBufferClient {
   }
 
   /// Request a framebuffer update from the server.
-  /// Call this once you are finished processing any received updates.
+  /// With [pipelineUpdateRequests], call it once after [handleIncomingMessages]
+  /// and the client keeps requesting by itself. Otherwise, call it once you are
+  /// finished processing any received updates.
   void requestUpdate() => _socket.match(
         () {},
-        (final RawSocket socket) => _config.match(
+        (final _) => _config.match(
           () {},
           (final Config config) {
             final RemoteFrameBufferFrameBufferUpdateRequestMessage
@@ -262,7 +318,7 @@ class RemoteFrameBufferClient {
               y: 0,
             );
             logger.log(Level.INFO, '> $requestMessage');
-            socket.write(
+            _write(
               requestMessage.toBytes().asUint8List(),
             );
           },
@@ -278,7 +334,7 @@ class RemoteFrameBufferClient {
           final RemoteFrameBufferClientCutTextMessage message =
               RemoteFrameBufferClientCutTextMessage(text: text);
           logger.info('> $message');
-          socket.write(message.toBytes().buffer.asUint8List());
+          _write(message.toBytes().buffer.asUint8List());
         },
       );
 
@@ -294,7 +350,7 @@ class RemoteFrameBufferClient {
             key: keyEvent.key,
           );
           logger.info('> $message');
-          socket.write(message.toBytes().asUint8List());
+          _write(message.toBytes().asUint8List());
         },
       );
 
@@ -318,7 +374,7 @@ class RemoteFrameBufferClient {
             y: pointerEvent.y,
           );
           logger.info('> $message');
-          socket.write(message.toBytes().asUint8List());
+          _write(message.toBytes().asUint8List());
         },
       );
 
@@ -357,7 +413,7 @@ class RemoteFrameBufferClient {
               16,
             );
             logger.info('> Security challenge response');
-            socket.write(
+            _write(
               response.buffer
                   .asUint8List(response.offsetInBytes, response.lengthInBytes),
             );
@@ -594,7 +650,7 @@ class RemoteFrameBufferClient {
             Level.INFO,
             '> ${const RemoteFrameBufferClientInitMessage(sharedFlag: true)}',
           );
-          socket.write(
+          _write(
             const RemoteFrameBufferClientInitMessage(sharedFlag: true)
                 .toBytes()
                 .asUint8List(),
@@ -615,7 +671,7 @@ class RemoteFrameBufferClient {
             ),
           );
           logger.log(Level.INFO, '> $message');
-          socket.write(message.toBytes().asUint8List());
+          _write(message.toBytes().asUint8List());
         },
         (final Object error, final _) => error,
       );
@@ -632,7 +688,7 @@ class RemoteFrameBufferClient {
         );
         logger.info('> $securityType');
         _selectedSecurityType = some(securityType);
-        socket.write(securityType.toBytes().asUint8List());
+        _write(securityType.toBytes().asUint8List());
       },
       (final Object error, final _) => error,
     );
@@ -660,7 +716,7 @@ class RemoteFrameBufferClient {
             ],
           );
           logger.info('> $message');
-          socket.write(message.toBytes().buffer.asUint8List());
+          _write(message.toBytes().buffer.asUint8List());
         },
         (final Object error, final _) => error,
       );
@@ -672,14 +728,26 @@ class RemoteFrameBufferClient {
         () async {
           final RemoteFrameBufferSetPixelFormatMessage message =
               RemoteFrameBufferSetPixelFormatMessage(
-            pixelFormat: RemoteFrameBufferPixelFormat.bgra8888,
+            pixelFormat: _pixelFormat,
           );
-          _zrleDecoder = some(
-            ZrleDecoder(pixelFormat: message.pixelFormat),
-          );
+          final PixelConverter converter =
+              PixelConverter(pixelFormat: message.pixelFormat);
+          _pixelConverter = some(converter);
+          _zrleDecoder = some(ZrleDecoder.withConverter(converter: converter));
           logger.info('> $message');
-          socket.write(message.toBytes().buffer.asUint8ClampedList());
+          _write(message.toBytes().buffer.asUint8List());
+          // From now on the server sends pixels in our format: Raw rectangle
+          // sizes must use its bits per pixel, not the server's native one.
+          _config = _config.map(
+            (final Config config) =>
+                config.copyWith(pixelFormat: message.pixelFormat),
+          );
         },
         (final Object error, final _) => error,
+      );
+
+  void _write(final Uint8List bytes) => _writer.match(
+        () {},
+        (final SocketWriter writer) => writer.write(bytes),
       );
 }

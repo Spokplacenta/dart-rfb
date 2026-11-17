@@ -39,18 +39,7 @@ void main() {
 
   test('PixelFormat to bytes works', () {
     expect(
-      const RemoteFrameBufferPixelFormat(
-        bitsPerPixel: 32,
-        depth: 24,
-        bigEndian: false,
-        trueColor: true,
-        redMax: 255,
-        greenMax: 255,
-        blueMax: 255,
-        redShift: 16,
-        greenShift: 8,
-        blueShift: 0,
-      ).toBytes().buffer.asUint8List(),
+      RemoteFrameBufferPixelFormat.bgra8888.toBytes().buffer.asUint8List(),
       equals(
         (ByteData(16)
               ..setUint8(0, 32)

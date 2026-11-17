@@ -8,18 +8,7 @@ import 'package:test/scaffolding.dart';
 void main() {
   test('Set pixel format message to bytes works', () {
     const RemoteFrameBufferPixelFormat pixelFormat =
-        RemoteFrameBufferPixelFormat(
-      bitsPerPixel: 32,
-      depth: 24,
-      bigEndian: false,
-      trueColor: true,
-      redMax: 255,
-      greenMax: 255,
-      blueMax: 255,
-      redShift: 16,
-      greenShift: 8,
-      blueShift: 0,
-    );
+        RemoteFrameBufferPixelFormat.bgra8888;
     expect(
       const RemoteFrameBufferSetPixelFormatMessage(
         pixelFormat: pixelFormat,
