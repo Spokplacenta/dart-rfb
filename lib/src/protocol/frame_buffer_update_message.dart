@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:dart_rfb/src/client/config.dart';
 import 'package:dart_rfb/src/client/remote_frame_buffer_client.dart';
 import 'package:dart_rfb/src/encodings/cursor_decoder.dart';
+import 'package:dart_rfb/src/encodings/hextile_decoder.dart';
 import 'package:dart_rfb/src/extensions/raw_socket_extensions.dart';
 import 'package:dart_rfb/src/protocol/encoding_type.dart';
 import 'package:fpdart/fpdart.dart';
@@ -132,6 +134,11 @@ Future<ByteData> _readRectanglePixelData({
             ? Future<ByteData>.value(ByteData(0))
             : socket.readSync(length: length, readWaitDuration: none()).run();
       },
+      hextile: (final _) => _readHextile(
+        bytesPerPixel: config.pixelFormat.bitsPerPixel ~/ 8,
+        header: header,
+        socket: socket,
+      ),
       raw: (final _) => socket
           .readSync(
             length: (header.width *
@@ -141,6 +148,16 @@ Future<ByteData> _readRectanglePixelData({
             readWaitDuration: none(),
           )
           .run(),
+      // The compressed bytes only, without their length.
+      zlib: (final _) async {
+        final int length =
+            (await socket.readSync(length: 4).run()).getUint32(0);
+        return length == 0
+            ? ByteData(0)
+            : await socket
+                .readSync(length: length, readWaitDuration: none())
+                .run();
+      },
       zrle: (final _) async {
         final ByteData compressedLengthBytes =
             await socket.readSync(length: 4).run();
@@ -168,5 +185,67 @@ Future<ByteData> _readRectanglePixelData({
           );
         return ByteData.sublistView(bytesBuilder.toBytes());
       },
-      unsupported: (final _) => Future<ByteData>.value(ByteData(0)),
+      // Its length is unknown: reading on would lose the stream.
+      unsupported: (final RemoteFrameBufferEncodingTypeUnsupported type) =>
+          Future<ByteData>.error(
+        FormatException(
+          'Unsupported rectangle encoding ${type.bytes.getInt32(0)}',
+        ),
+      ),
     );
+
+/// Hextile announces no length: its tiles are read one by one, exactly, so
+/// that nothing of the next message is consumed.
+Future<ByteData> _readHextile({
+  required final int bytesPerPixel,
+  required final RemoteFrameBufferFrameBufferUpdateMessageRectangleHeader
+      header,
+  required final RawSocket socket,
+}) async {
+  final BytesBuilder bytes = BytesBuilder(copy: false);
+  int tiles = 0;
+  Future<Uint8List> read(final int length) async {
+    final ByteData data =
+        await socket.readSync(length: length, readWaitDuration: none()).run();
+    final Uint8List view =
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    bytes.add(view);
+    return view;
+  }
+
+  for (int y = 0; y < header.height; y += HextileDecoder.tileSize) {
+    final int tileHeight = min(HextileDecoder.tileSize, header.height - y);
+    for (int x = 0; x < header.width; x += HextileDecoder.tileSize) {
+      final int tileWidth = min(HextileDecoder.tileSize, header.width - x);
+      final int subencoding = (await read(1))[0];
+      final int headerLength = HextileDecoder.tileHeaderLength(
+        subencoding: subencoding,
+        bytesPerPixel: bytesPerPixel,
+        tileWidth: tileWidth,
+        tileHeight: tileHeight,
+      );
+      if (headerLength > 0) {
+        final Uint8List tileHeader = await read(headerLength);
+        if (subencoding & HextileDecoder.raw == 0 &&
+            subencoding & HextileDecoder.anySubrects != 0) {
+          final int count = tileHeader.last;
+          if (count > 0) {
+            await read(
+              count *
+                  HextileDecoder.subrectLength(
+                    subencoding: subencoding,
+                    bytesPerPixel: bytesPerPixel,
+                  ),
+            );
+          }
+        }
+      }
+      // A big rectangle whose bytes are all there already never waits: give
+      // the event loop a turn now and then (pointer events, J364).
+      if (++tiles % 64 == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+  }
+  return ByteData.sublistView(bytes.takeBytes());
+}

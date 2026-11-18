@@ -25,9 +25,30 @@ And here we are, after a weekend, with the first, minimal, protocol implementati
 - ✅ Raw
 - ✅ CopyRect
 - ⬜ RRE (obsolescent)
-- ⬜ Hextile (obsolescent)
+- ✅ Hextile (obsolescent)
 - ⬜ TRLE
-- ⬜ ZRLE
+- ✅ ZRLE
+- ✅ ZLib (one zlib stream for the whole connection)
+
+By default the client asks for ZRLE, ZLib, Hextile, CopyRect, then Raw: a
+server uses the first encoding of this list it knows, so a server without ZRLE
+sends ZLib or Hextile rather than Raw. Every rectangle is delivered as opaque
+BGRA8888.
+
+The list can be chosen, in order of preference, among
+`RemoteFrameBufferClient.supportedEncodings`, for example to avoid an encoding
+a server handles badly:
+
+```dart
+final RemoteFrameBufferClient client = RemoteFrameBufferClient(
+  encodings: const <RemoteFrameBufferEncodingType>[
+    RemoteFrameBufferEncodingType.zlib(),
+  ],
+); // announces ZLib, then Raw
+```
+
+Raw is added at the end when missing. An empty list, a repeated encoding or an
+encoding outside `supportedEncodings` throws an `ArgumentError`.
 - ✅ Cursor pseudo-encoding (opt-in, `RemoteFrameBufferClient(localCursor: true)`)
 - ⬜ DesktopSize pseudo-encoding
 
@@ -93,6 +114,8 @@ StreamSubscription<RemoteFrameBufferClientReadMessage> subscription =
 );
 // Request an initial framebuffer update
 client.requestUpdate();
+// Ask for the whole screen again, e.g. to repaint areas a server left stale
+client.requestUpdate(incremental: false);
 ```
 
 ## Learn More

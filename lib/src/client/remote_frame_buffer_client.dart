@@ -14,7 +14,9 @@ import 'package:dart_rfb/src/client/remote_frame_buffer_client_update.dart';
 import 'package:dart_rfb/src/client/socket_writer.dart';
 import 'package:dart_rfb/src/constants.dart';
 import 'package:dart_rfb/src/encodings/cursor_decoder.dart';
+import 'package:dart_rfb/src/encodings/hextile_decoder.dart';
 import 'package:dart_rfb/src/encodings/pixel_converter.dart';
+import 'package:dart_rfb/src/encodings/zlib_decoder.dart';
 import 'package:dart_rfb/src/encodings/zrle_decoder.dart';
 import 'package:dart_rfb/src/extensions/byte_data_extensions.dart';
 import 'package:dart_rfb/src/extensions/int_extensions.dart';
@@ -51,6 +53,11 @@ class RemoteFrameBufferClient {
 
   Option<CursorDecoder> _cursorDecoder = none();
 
+  Option<HextileDecoder> _hextileDecoder = none();
+
+  /// The encodings announced, in order, Raw last at the latest.
+  final List<RemoteFrameBufferEncodingType> _encodings;
+
   final bool _localCursor;
 
   Option<String> _password = none();
@@ -70,6 +77,9 @@ class RemoteFrameBufferClient {
   Option<RawSocket> _socket = none();
 
   Option<SocketWriter> _writer = none();
+
+  /// ZLib's own zlib stream, kept for the whole connection.
+  Option<ZlibDecoder> _zlibDecoder = none();
 
   Option<ZrleDecoder> _zrleDecoder = none();
 
@@ -106,20 +116,93 @@ class RemoteFrameBufferClient {
   /// The caller then draws it at the local pointer, which follows the mouse
   /// without waiting for the server. Off by default: a caller that does not
   /// draw the cursor would otherwise lose it.
+  ///
+  /// [encodings] are the encodings announced to the server, in order of
+  /// preference, among [supportedEncodings]: servers use the first one they
+  /// know. The default, [defaultEncodings], is ZRLE, ZLib, Hextile, CopyRect,
+  /// Raw. Raw is added at the end when missing, so that every server has an
+  /// encoding to fall back on. See [normalizeEncodings] for what is
+  /// rejected.
   RemoteFrameBufferClient({
+    final List<RemoteFrameBufferEncodingType> encodings = defaultEncodings,
     final bool localCursor = false,
     final bool pipelineUpdateRequests = true,
     final RemoteFrameBufferPixelFormat pixelFormat =
         RemoteFrameBufferPixelFormat.rgb565,
-  })  : _localCursor = localCursor,
+  })  : _encodings = normalizeEncodings(encodings),
+        _localCursor = localCursor,
         _pipelineUpdateRequests = pipelineUpdateRequests,
         _pixelFormat = pixelFormat {
     // Fail now rather than after the handshake.
     PixelConverter(pixelFormat: pixelFormat);
   }
 
+  /// The real encodings this client decodes, ZRLE first: the choices for
+  /// [RemoteFrameBufferClient.new]'s `encodings`.
+  static const List<RemoteFrameBufferEncodingType> supportedEncodings =
+      <RemoteFrameBufferEncodingType>[
+    RemoteFrameBufferEncodingType.zrle(),
+    RemoteFrameBufferEncodingType.zlib(),
+    RemoteFrameBufferEncodingType.hextile(),
+    RemoteFrameBufferEncodingType.copyRect(),
+    RemoteFrameBufferEncodingType.raw(),
+  ];
+
+  /// The encodings announced by default: servers use the first one of this
+  /// list they know, ZRLE where available (x11vnc), else ZLib, else Hextile,
+  /// rather than Raw (an HMI without ZRLE sends 768 KB per 800x480 screen in
+  /// Raw, 29 KB in ZLib).
+  static const List<RemoteFrameBufferEncodingType> defaultEncodings =
+      supportedEncodings;
+
+  /// Checks [encodings] and returns the list announced to the server: the
+  /// same encodings in the same order, with Raw added at the end when
+  /// missing.
+  ///
+  /// Throws an [ArgumentError] for an empty list, a repeated encoding, or an
+  /// encoding that is not in [supportedEncodings] (a pseudo-encoding such as
+  /// Cursor, which [localCursor] controls, or one this client cannot decode).
+  static List<RemoteFrameBufferEncodingType> normalizeEncodings(
+    final List<RemoteFrameBufferEncodingType> encodings,
+  ) {
+    if (encodings.isEmpty) {
+      throw ArgumentError.value(
+        encodings,
+        'encodings',
+        'At least one encoding is needed',
+      );
+    }
+    for (final RemoteFrameBufferEncodingType encoding in encodings) {
+      if (!supportedEncodings.contains(encoding)) {
+        throw ArgumentError.value(
+          encodings,
+          'encodings',
+          'Unsupported encoding $encoding (supported: $supportedEncodings)',
+        );
+      }
+    }
+    if (encodings.toSet().length != encodings.length) {
+      throw ArgumentError.value(
+        encodings,
+        'encodings',
+        'An encoding appears more than once',
+      );
+    }
+    return List<RemoteFrameBufferEncodingType>.unmodifiable(
+      <RemoteFrameBufferEncodingType>[
+        ...encodings,
+        if (!encodings.contains(const RemoteFrameBufferEncodingType.raw()))
+          const RemoteFrameBufferEncodingType.raw(),
+      ],
+    );
+  }
+
   /// The config used by the underlying session.
   Option<Config> get config => _config;
+
+  /// The real encodings announced, in order, see
+  /// [RemoteFrameBufferClient.new].
+  List<RemoteFrameBufferEncodingType> get encodings => _encodings;
 
   /// Whether the Cursor pseudo-encoding is announced, see
   /// [RemoteFrameBufferClient.new].
@@ -313,7 +396,9 @@ class RemoteFrameBufferClient {
                   _rectangleConverter.convert(
                     rectangle: rectangle,
                     zrleDecoder: _zrleDecoder,
+                    hextileDecoder: _hextileDecoder,
                     pixelConverter: _pixelConverter,
+                    zlibDecoder: _zlibDecoder,
                   ),
                 );
               }
@@ -338,7 +423,13 @@ class RemoteFrameBufferClient {
   /// With [pipelineUpdateRequests], call it once after [handleIncomingMessages]
   /// and the client keeps requesting by itself. Otherwise, call it once you are
   /// finished processing any received updates.
-  void requestUpdate() => _socket.match(
+  ///
+  /// With [incremental] (the default), the server sends only what changed.
+  /// Set it to `false` to ask for the whole screen again, e.g. to repaint
+  /// areas a server left stale. With [pipelineUpdateRequests], such a request
+  /// is one more pending request: servers merge pending requests, so the
+  /// pipeline stays one request deep.
+  void requestUpdate({final bool incremental = true}) => _socket.match(
         () {},
         (final _) => _config.match(
           () {},
@@ -347,7 +438,7 @@ class RemoteFrameBufferClient {
                 requestMessage =
                 RemoteFrameBufferFrameBufferUpdateRequestMessage(
               height: config.frameBufferHeight,
-              incremental: true,
+              incremental: incremental,
               width: config.frameBufferWidth,
               x: 0,
               y: 0,
@@ -771,9 +862,7 @@ class RemoteFrameBufferClient {
           final RemoteFrameBufferSetEncodingsMessage message =
               RemoteFrameBufferSetEncodingsMessage(
             encodingTypes: <RemoteFrameBufferEncodingType>[
-              const RemoteFrameBufferEncodingType.zrle(),
-              const RemoteFrameBufferEncodingType.copyRect(),
-              const RemoteFrameBufferEncodingType.raw(),
+              ..._encodings,
               // Pseudo-encodings come after the real ones.
               if (_localCursor) const RemoteFrameBufferEncodingType.cursor(),
             ],
@@ -797,6 +886,8 @@ class RemoteFrameBufferClient {
               PixelConverter(pixelFormat: message.pixelFormat);
           _pixelConverter = some(converter);
           _cursorDecoder = some(CursorDecoder(converter: converter));
+          _hextileDecoder = some(HextileDecoder(converter: converter));
+          _zlibDecoder = some(ZlibDecoder(converter: converter));
           _zrleDecoder = some(ZrleDecoder.withConverter(converter: converter));
           logger.info('> $message');
           _write(message.toBytes().buffer.asUint8List());

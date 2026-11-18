@@ -18,8 +18,21 @@ class RemoteFrameBufferEncodingType with _$RemoteFrameBufferEncodingType {
   /// See: https://www.rfc-editor.org/rfc/rfc6143.html#section-7.8.1
   const factory RemoteFrameBufferEncodingType.cursor() =
       RemoteFrameBufferEncodingTypeCursor;
+
+  /// Hextile: 16x16 tiles of solid backgrounds and subrectangles.
+  ///
+  /// See: https://www.rfc-editor.org/rfc/rfc6143.html#section-7.7.4
+  const factory RemoteFrameBufferEncodingType.hextile() =
+      RemoteFrameBufferEncodingTypeHextile;
   const factory RemoteFrameBufferEncodingType.raw() =
       RemoteFrameBufferEncodingTypeRaw;
+
+  /// ZLib: Raw pixels compressed with one zlib stream for the whole
+  /// connection.
+  ///
+  /// See: https://github.com/rfbproto/rfbproto/blob/master/rfbproto.rst#zlib-encoding
+  const factory RemoteFrameBufferEncodingType.zlib() =
+      RemoteFrameBufferEncodingTypeZlib;
   const factory RemoteFrameBufferEncodingType.zrle() =
       RemoteFrameBufferEncodingTypeZrle;
   const factory RemoteFrameBufferEncodingType.unsupported({
@@ -35,6 +48,10 @@ class RemoteFrameBufferEncodingType with _$RemoteFrameBufferEncodingType {
         return const RemoteFrameBufferEncodingType.raw();
       case 1:
         return const RemoteFrameBufferEncodingType.copyRect();
+      case 5:
+        return const RemoteFrameBufferEncodingType.hextile();
+      case 6:
+        return const RemoteFrameBufferEncodingType.zlib();
       case 16:
         return const RemoteFrameBufferEncodingType.zrle();
       case -239:
@@ -51,7 +68,9 @@ class RemoteFrameBufferEncodingType with _$RemoteFrameBufferEncodingType {
       map(
         copyRect: (final _) => 1,
         cursor: (final _) => -239,
+        hextile: (final _) => 5,
         raw: (final _) => 0,
+        zlib: (final _) => 6,
         zrle: (final _) => 16,
         unsupported: (final _) => -1,
       ),

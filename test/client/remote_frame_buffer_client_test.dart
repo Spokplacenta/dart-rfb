@@ -204,6 +204,8 @@ void main() {
   /// the wire and in the update.
   Future<(RemoteFrameBufferClient, _FakeServer)> connect(
     final List<_Step> steps, {
+    final List<RemoteFrameBufferEncodingType> encodings =
+        RemoteFrameBufferClient.defaultEncodings,
     final bool localCursor = false,
     final bool pipelineUpdateRequests = true,
     final RemoteFrameBufferPixelFormat? pixelFormat =
@@ -213,10 +215,12 @@ void main() {
     servers.add(server);
     final RemoteFrameBufferClient client = pixelFormat == null
         ? RemoteFrameBufferClient(
+            encodings: encodings,
             localCursor: localCursor,
             pipelineUpdateRequests: pipelineUpdateRequests,
           )
         : RemoteFrameBufferClient(
+            encodings: encodings,
             localCursor: localCursor,
             pipelineUpdateRequests: pipelineUpdateRequests,
             pixelFormat: pixelFormat,
@@ -413,6 +417,21 @@ void main() {
     expect((await server.reports)[2], 0);
   });
 
+  test('a non-incremental request asks for the whole screen', () async {
+    final (RemoteFrameBufferClient client, _FakeServer server) = await connect(
+      const <_Step>[_Read(10), _Read(10), _Silence(100)],
+      pipelineUpdateRequests: false,
+    );
+    client
+      ..requestUpdate(incremental: false)
+      ..requestUpdate();
+    final List<Object?> reports = await server.reports;
+    // Type 3, incremental 0, then x 0, y 0, width 4, height 2.
+    expect(reports[1], <int>[3, 0, 0, 0, 0, 0, 0, 4, 0, 2]);
+    expect((reports[2] as Uint8List?)?[1], 1);
+    expect(reports[3], 0);
+  });
+
   test('a pointer event leaves while an update is still arriving', () async {
     // On a slow link, the pixels of an update keep arriving while the next
     // one is already requested: the read loop must still let the event loop
@@ -479,6 +498,288 @@ void main() {
     expect(receivedWhenEventLoopRan, lessThan(3));
   });
 
+  group('Encodings', () {
+    /// The encodings of the SetEncodings message the server received.
+    Future<List<int>> sent(final _FakeServer server) async {
+      final ByteData bytes = ByteData.sublistView(
+        Uint8List.fromList((await server.reports).first! as List<int>),
+      );
+      return <int>[
+        for (int offset = 24; offset < bytes.lengthInBytes; offset += 4)
+          bytes.getInt32(offset),
+      ];
+    }
+
+    test('the default list is ZRLE, ZLib, Hextile, CopyRect, Raw', () {
+      expect(
+        RemoteFrameBufferClient().encodings,
+        const <RemoteFrameBufferEncodingType>[
+          RemoteFrameBufferEncodingType.zrle(),
+          RemoteFrameBufferEncodingType.zlib(),
+          RemoteFrameBufferEncodingType.hextile(),
+          RemoteFrameBufferEncodingType.copyRect(),
+          RemoteFrameBufferEncodingType.raw(),
+        ],
+      );
+      expect(
+        RemoteFrameBufferClient.defaultEncodings,
+        RemoteFrameBufferClient.supportedEncodings,
+      );
+    });
+
+    test('are announced in the order asked, then Raw, then Cursor', () async {
+      final (_, _FakeServer server) = await connect(
+        const <_Step>[],
+        encodings: const <RemoteFrameBufferEncodingType>[
+          RemoteFrameBufferEncodingType.hextile(),
+          RemoteFrameBufferEncodingType.zlib(),
+        ],
+        localCursor: true,
+      );
+      expect(await sent(server), <int>[5, 6, 0, -239]);
+    });
+
+    test('Raw stays where it is asked', () async {
+      final (RemoteFrameBufferClient client, _FakeServer server) =
+          await connect(
+        const <_Step>[],
+        encodings: const <RemoteFrameBufferEncodingType>[
+          RemoteFrameBufferEncodingType.raw(),
+          RemoteFrameBufferEncodingType.zrle(),
+        ],
+      );
+      expect(client.encodings, const <RemoteFrameBufferEncodingType>[
+        RemoteFrameBufferEncodingType.raw(),
+        RemoteFrameBufferEncodingType.zrle(),
+      ]);
+      expect(await sent(server), <int>[0, 16]);
+    });
+
+    for (final (String name, List<RemoteFrameBufferEncodingType> encodings)
+        in <(String, List<RemoteFrameBufferEncodingType>)>[
+      ('an empty list', const <RemoteFrameBufferEncodingType>[]),
+      (
+        'a pseudo-encoding',
+        const <RemoteFrameBufferEncodingType>[
+          RemoteFrameBufferEncodingType.cursor(),
+        ],
+      ),
+      (
+        'an encoding that cannot be decoded',
+        <RemoteFrameBufferEncodingType>[
+          RemoteFrameBufferEncodingType.unsupported(
+            bytes: ByteData(4)..setInt32(0, 7),
+          ),
+        ],
+      ),
+      (
+        'a repeated encoding',
+        const <RemoteFrameBufferEncodingType>[
+          RemoteFrameBufferEncodingType.zlib(),
+          RemoteFrameBufferEncodingType.zlib(),
+        ],
+      ),
+    ]) {
+      test('$name is rejected by the constructor', () {
+        expect(
+          () => RemoteFrameBufferClient(encodings: encodings),
+          throwsArgumentError,
+        );
+        expect(
+          () => RemoteFrameBufferClient.normalizeEncodings(encodings),
+          throwsArgumentError,
+        );
+      });
+    }
+  });
+
+  group('ZLib and Hextile', () {
+    /// A rectangle header at ([x], [y]), [width] x [height], in [encoding].
+    List<int> header(
+      final int x,
+      final int y,
+      final int width,
+      final int height,
+      final int encoding,
+    ) =>
+        (ByteData(12)
+              ..setUint16(0, x)
+              ..setUint16(2, y)
+              ..setUint16(4, width)
+              ..setUint16(6, height)
+              ..setInt32(8, encoding))
+            .buffer
+            .asUint8List();
+
+    /// One deflate stream for the connection, flushed after each rectangle.
+    final RawZLibFilter deflater = RawZLibFilter.deflateFilter();
+    List<int> zlib(final List<int> pixels) {
+      deflater.process(pixels, 0, pixels.length);
+      final List<int> out = <int>[];
+      List<int>? chunk;
+      while ((chunk = deflater.processed()) != null) {
+        out.addAll(chunk!);
+      }
+      return <int>[
+        ...(ByteData(4)..setUint32(0, out.length)).buffer.asUint8List(),
+        ...out,
+      ];
+    }
+
+    List<int> bytesOf(final RemoteFrameBufferClientUpdateRectangle r) =>
+        r.byteData.buffer
+            .asUint8List(r.byteData.offsetInBytes, r.byteData.lengthInBytes);
+
+    test('an update mixing ZLib, Hextile and Raw, then ZLib again', () async {
+      // At 32 bpp, a pixel is B, G, R, padding; it arrives opaque.
+      final List<int> first = <int>[
+        0, 0, 0, 3, // 3 rectangles
+        ...header(0, 0, 2, 1, 6),
+        ...zlib(<int>[1, 2, 3, 0, 4, 5, 6, 0]),
+        ...header(2, 0, 2, 1, 5),
+        2, 7, 8, 9, 0, // Hextile: one tile, background only
+        ...header(0, 1, 2, 1, 0),
+        10, 11, 12, 0, 13, 14, 15, 0, // Raw
+      ];
+      final List<int> second = <int>[
+        0,
+        0,
+        0,
+        1,
+        ...header(2, 1, 2, 1, 6),
+        ...zlib(<int>[16, 17, 18, 0, 19, 20, 21, 0]),
+      ];
+      // The zlib data of the first rectangle arrives in two reads.
+      const int cut = 4 + 12 + 4 + 3;
+      final (RemoteFrameBufferClient client, _) = await connect(
+        <_Step>[
+          _Send(first.sublist(0, cut)),
+          const _Wait(50),
+          _Send(first.sublist(cut)),
+          _Send(second),
+        ],
+        pipelineUpdateRequests: false,
+      );
+      final Future<List<RemoteFrameBufferClientUpdate>> updates =
+          client.updateStream.take(2).toList();
+      client.handleIncomingMessages();
+      final List<RemoteFrameBufferClientUpdate> received = await updates;
+      final List<RemoteFrameBufferClientUpdateRectangle> rects =
+          received.first.rectangles.toList();
+      expect(
+        rects.map(
+          (final RemoteFrameBufferClientUpdateRectangle r) => r.encodingType,
+        ),
+        everyElement(const RemoteFrameBufferEncodingType.raw()),
+      );
+      expect(bytesOf(rects[0]), <int>[1, 2, 3, 255, 4, 5, 6, 255]);
+      expect(bytesOf(rects[1]), <int>[7, 8, 9, 255, 7, 8, 9, 255]);
+      expect(bytesOf(rects[2]), <int>[10, 11, 12, 255, 13, 14, 15, 255]);
+      // Only the connection's own zlib stream can inflate this one.
+      expect(
+        bytesOf(received.last.rectangles.single),
+        <int>[16, 17, 18, 255, 19, 20, 21, 255],
+      );
+    });
+
+    test('real Hextile updates of a Qt 4 server match the reference', () async {
+      // test/fixtures/qt4_hextile/README.md: three updates captured on a
+      // Qt for Embedded Linux VNC Server, and the framebuffers an
+      // independent decoder (RFC 6143) gives after each one.
+      const String fixtures = 'test/fixtures/qt4_hextile';
+      List<int> read(final String name) =>
+          gzip.decode(File('$fixtures/$name').readAsBytesSync());
+      final (RemoteFrameBufferClient client, _) = await connect(
+        <_Step>[_Send(read('updates.bin.gz'))],
+        pipelineUpdateRequests: false,
+        pixelFormat: null, // rgb565, as the capture
+      );
+      final Future<List<RemoteFrameBufferClientUpdate>> updates =
+          client.updateStream.take(3).toList();
+      client.handleIncomingMessages();
+      final Uint8List frameBuffer = Uint8List(800 * 480 * 4);
+      int index = 0;
+      for (final RemoteFrameBufferClientUpdate update in await updates) {
+        for (final RemoteFrameBufferClientUpdateRectangle r
+            in update.rectangles) {
+          expect(r.encodingType, const RemoteFrameBufferEncodingType.raw());
+          final List<int> pixels = bytesOf(r);
+          for (int y = 0; y < r.height; y++) {
+            final int at = ((r.y + y) * 800 + r.x) * 4;
+            frameBuffer.setRange(at, at + r.width * 4, pixels, y * r.width * 4);
+          }
+        }
+        final String frame = 'frame_${index.toString().padLeft(3, '0')}';
+        expect(
+          frameBuffer,
+          read('$frame.bgra.gz'),
+          reason: 'framebuffer after update $index',
+        );
+        index++;
+      }
+      expect(index, 3);
+    });
+
+    test('an unknown encoding is reported, not skipped', () async {
+      final (RemoteFrameBufferClient client, _) = await connect(
+        <_Step>[
+          _Send(<int>[0, 0, 0, 1, ...header(0, 0, 2, 1, 7), 1, 2, 3]),
+        ],
+        pipelineUpdateRequests: false,
+      );
+      final StreamIterator<RemoteFrameBufferClientReadMessage> messages =
+          StreamIterator<RemoteFrameBufferClientReadMessage>(
+        client.incomingMessages,
+      );
+      await expectLater(
+        messages.moveNext(),
+        throwsA(
+          predicate(
+            (final Object? e) =>
+                '$e'.contains('Unsupported rectangle encoding 7'),
+          ),
+        ),
+      );
+    });
+
+    test('a big Hextile rectangle lets the event loop run', () async {
+      // 1600x480: 3000 tiles, all in the socket before the loop starts.
+      final (RemoteFrameBufferClient client, _) = await connect(
+        <_Step>[
+          _Send(<int>[
+            0,
+            0,
+            0,
+            1,
+            ...header(0, 0, 1600, 480, 5),
+            for (int i = 0; i < 3000; i++) ...<int>[2, i & 0xFF, 0, 0, 0],
+          ]),
+        ],
+        pipelineUpdateRequests: false,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      int turns = 0;
+      bool done = false;
+      void tick() {
+        if (done) {
+          return;
+        }
+        turns++;
+        Timer.run(tick);
+      }
+
+      Timer.run(tick);
+      final Future<RemoteFrameBufferClientUpdate> update =
+          client.updateStream.first;
+      client.handleIncomingMessages();
+      final RemoteFrameBufferClientUpdate received = await update;
+      done = true;
+      expect(received.rectangles.single.byteData.lengthInBytes, 1600 * 480 * 4);
+      // One turn per 64 tiles, not only one per message.
+      expect(turns, greaterThan(20));
+    });
+  });
+
   group('Cursor pseudo-encoding', () {
     /// The encodings of the SetEncodings message the server received.
     Future<List<int>> encodings(final _FakeServer server) async {
@@ -495,14 +796,14 @@ void main() {
       final (RemoteFrameBufferClient client, _FakeServer server) =
           await connect(const <_Step>[]);
       expect(client.localCursor, isFalse);
-      expect(await encodings(server), <int>[16, 1, 0]);
+      expect(await encodings(server), <int>[16, 6, 5, 1, 0]);
     });
 
     test('is announced last with localCursor', () async {
       final (RemoteFrameBufferClient client, _FakeServer server) =
           await connect(const <_Step>[], localCursor: true);
       expect(client.localCursor, isTrue);
-      expect(await encodings(server), <int>[16, 1, 0, -239]);
+      expect(await encodings(server), <int>[16, 6, 5, 1, 0, -239]);
     });
 
     test('a cursor and a ZRLE rectangle in one update are split', () async {
