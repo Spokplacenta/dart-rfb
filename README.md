@@ -28,7 +28,7 @@ And here we are, after a weekend, with the first, minimal, protocol implementati
 - ⬜ Hextile (obsolescent)
 - ⬜ TRLE
 - ⬜ ZRLE
-- ⬜ Cursor pseudo-encoding
+- ✅ Cursor pseudo-encoding (opt-in, `RemoteFrameBufferClient(localCursor: true)`)
 - ⬜ DesktopSize pseudo-encoding
 
 ### Security Types
@@ -77,6 +77,9 @@ await client.connect(
 client.updateStream.listen(
   (final RemoteFrameBufferClientUpdate update) {
     // Update your framebuffer
+    // With RemoteFrameBufferClient(localCursor: true), update.cursor holds
+    // the new cursor shape (BGRA8888 with alpha, plus its hotspot): draw it
+    // at the local pointer, the server no longer draws it.
   },
 );
 // To let the package handle incoming messages

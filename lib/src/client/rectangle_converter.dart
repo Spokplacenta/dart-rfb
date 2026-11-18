@@ -27,6 +27,13 @@ class RemoteFrameBufferRectangleConverter {
           byteData: rectangle.pixelData,
           encodingType: rectangle.encodingType,
         ),
+        // The client decodes cursors with a CursorDecoder, out of the
+        // framebuffer rectangles.
+        cursor: (final _) => _buildRectangle(
+          rectangle: rectangle,
+          byteData: rectangle.pixelData,
+          encodingType: rectangle.encodingType,
+        ),
         raw: (final _) => _buildRectangle(
           rectangle: rectangle,
           byteData: pixelConverter.match(

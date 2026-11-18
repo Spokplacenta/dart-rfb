@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dart_rfb/src/protocol/encoding_type.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 part 'remote_frame_buffer_client_update.freezed.dart';
@@ -19,9 +20,45 @@ class RemoteFrameBufferClientFrameBufferConfig
 @freezed
 class RemoteFrameBufferClientUpdate with _$RemoteFrameBufferClientUpdate {
   const factory RemoteFrameBufferClientUpdate({
+    /// The new cursor shape, when this update carries one (Cursor
+    /// pseudo-encoding, see `RemoteFrameBufferClient(localCursor:)`). The
+    /// cursor is not part of the framebuffer: draw it yourself at the pointer.
+    @Default(None<RemoteFrameBufferClientCursor>())
+    final Option<RemoteFrameBufferClientCursor> cursor,
+
     /// The list of [RemoteFrameBufferClientUpdateRectangle]s that make this update.
+    /// Cursor rectangles are not in this list, see [cursor].
     required final Iterable<RemoteFrameBufferClientUpdateRectangle> rectangles,
   }) = _RemoteFrameBufferClientUpdate;
+}
+
+/// A cursor shape sent by the server (Cursor pseudo-encoding).
+@freezed
+class RemoteFrameBufferClientCursor with _$RemoteFrameBufferClientCursor {
+  const factory RemoteFrameBufferClientCursor({
+    /// The height in pixels, 0 for an invisible cursor.
+    required final int height,
+
+    /// The x offset of the hotspot, the point of the cursor at the pointer.
+    required final int hotspotX,
+
+    /// The y offset of the hotspot.
+    required final int hotspotY,
+
+    /// [width] x [height] BGRA8888 pixels. The alpha comes from the cursor
+    /// bitmask: 255 where the cursor is drawn, 0 elsewhere, and the colour of
+    /// transparent pixels is 0, so the pixels are both premultiplied and
+    /// straight.
+    required final ByteData pixels,
+
+    /// The width in pixels, 0 for an invisible cursor.
+    required final int width,
+  }) = _RemoteFrameBufferClientCursor;
+
+  const RemoteFrameBufferClientCursor._();
+
+  /// Whether the server wants a visible cursor: a 0x0 cursor hides it.
+  bool get isVisible => width > 0 && height > 0;
 }
 
 /// Contains all data that is relevant for an updated rectangle.

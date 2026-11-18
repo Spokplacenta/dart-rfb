@@ -177,7 +177,14 @@ abstract class _RemoteFrameBufferClientFrameBufferConfig
 
 /// @nodoc
 mixin _$RemoteFrameBufferClientUpdate {
+  /// The new cursor shape, when this update carries one (Cursor
+  /// pseudo-encoding, see `RemoteFrameBufferClient(localCursor:)`). The
+  /// cursor is not part of the framebuffer: draw it yourself at the pointer.
+  Option<RemoteFrameBufferClientCursor> get cursor =>
+      throw _privateConstructorUsedError;
+
   /// The list of [RemoteFrameBufferClientUpdateRectangle]s that make this update.
+  /// Cursor rectangles are not in this list, see [cursor].
   Iterable<RemoteFrameBufferClientUpdateRectangle> get rectangles =>
       throw _privateConstructorUsedError;
 
@@ -196,7 +203,9 @@ abstract class $RemoteFrameBufferClientUpdateCopyWith<$Res> {
       _$RemoteFrameBufferClientUpdateCopyWithImpl<$Res,
           RemoteFrameBufferClientUpdate>;
   @useResult
-  $Res call({Iterable<RemoteFrameBufferClientUpdateRectangle> rectangles});
+  $Res call(
+      {Option<RemoteFrameBufferClientCursor> cursor,
+      Iterable<RemoteFrameBufferClientUpdateRectangle> rectangles});
 }
 
 /// @nodoc
@@ -215,9 +224,14 @@ class _$RemoteFrameBufferClientUpdateCopyWithImpl<$Res,
   @pragma('vm:prefer-inline')
   @override
   $Res call({
+    Object? cursor = null,
     Object? rectangles = null,
   }) {
     return _then(_value.copyWith(
+      cursor: null == cursor
+          ? _value.cursor
+          : cursor // ignore: cast_nullable_to_non_nullable
+              as Option<RemoteFrameBufferClientCursor>,
       rectangles: null == rectangles
           ? _value.rectangles
           : rectangles // ignore: cast_nullable_to_non_nullable
@@ -235,7 +249,9 @@ abstract class _$$RemoteFrameBufferClientUpdateImplCopyWith<$Res>
       __$$RemoteFrameBufferClientUpdateImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({Iterable<RemoteFrameBufferClientUpdateRectangle> rectangles});
+  $Res call(
+      {Option<RemoteFrameBufferClientCursor> cursor,
+      Iterable<RemoteFrameBufferClientUpdateRectangle> rectangles});
 }
 
 /// @nodoc
@@ -253,9 +269,14 @@ class __$$RemoteFrameBufferClientUpdateImplCopyWithImpl<$Res>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
+    Object? cursor = null,
     Object? rectangles = null,
   }) {
     return _then(_$RemoteFrameBufferClientUpdateImpl(
+      cursor: null == cursor
+          ? _value.cursor
+          : cursor // ignore: cast_nullable_to_non_nullable
+              as Option<RemoteFrameBufferClientCursor>,
       rectangles: null == rectangles
           ? _value.rectangles
           : rectangles // ignore: cast_nullable_to_non_nullable
@@ -268,15 +289,25 @@ class __$$RemoteFrameBufferClientUpdateImplCopyWithImpl<$Res>
 
 class _$RemoteFrameBufferClientUpdateImpl
     implements _RemoteFrameBufferClientUpdate {
-  const _$RemoteFrameBufferClientUpdateImpl({required this.rectangles});
+  const _$RemoteFrameBufferClientUpdateImpl(
+      {this.cursor = const None<RemoteFrameBufferClientCursor>(),
+      required this.rectangles});
+
+  /// The new cursor shape, when this update carries one (Cursor
+  /// pseudo-encoding, see `RemoteFrameBufferClient(localCursor:)`). The
+  /// cursor is not part of the framebuffer: draw it yourself at the pointer.
+  @override
+  @JsonKey()
+  final Option<RemoteFrameBufferClientCursor> cursor;
 
   /// The list of [RemoteFrameBufferClientUpdateRectangle]s that make this update.
+  /// Cursor rectangles are not in this list, see [cursor].
   @override
   final Iterable<RemoteFrameBufferClientUpdateRectangle> rectangles;
 
   @override
   String toString() {
-    return 'RemoteFrameBufferClientUpdate(rectangles: $rectangles)';
+    return 'RemoteFrameBufferClientUpdate(cursor: $cursor, rectangles: $rectangles)';
   }
 
   @override
@@ -284,13 +315,14 @@ class _$RemoteFrameBufferClientUpdateImpl
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$RemoteFrameBufferClientUpdateImpl &&
+            (identical(other.cursor, cursor) || other.cursor == cursor) &&
             const DeepCollectionEquality()
                 .equals(other.rectangles, rectangles));
   }
 
   @override
-  int get hashCode =>
-      Object.hash(runtimeType, const DeepCollectionEquality().hash(rectangles));
+  int get hashCode => Object.hash(
+      runtimeType, cursor, const DeepCollectionEquality().hash(rectangles));
 
   /// Create a copy of RemoteFrameBufferClientUpdate
   /// with the given fields replaced by the non-null parameter values.
@@ -306,10 +338,18 @@ class _$RemoteFrameBufferClientUpdateImpl
 abstract class _RemoteFrameBufferClientUpdate
     implements RemoteFrameBufferClientUpdate {
   const factory _RemoteFrameBufferClientUpdate(
-      {required final Iterable<RemoteFrameBufferClientUpdateRectangle>
+      {final Option<RemoteFrameBufferClientCursor> cursor,
+      required final Iterable<RemoteFrameBufferClientUpdateRectangle>
           rectangles}) = _$RemoteFrameBufferClientUpdateImpl;
 
+  /// The new cursor shape, when this update carries one (Cursor
+  /// pseudo-encoding, see `RemoteFrameBufferClient(localCursor:)`). The
+  /// cursor is not part of the framebuffer: draw it yourself at the pointer.
+  @override
+  Option<RemoteFrameBufferClientCursor> get cursor;
+
   /// The list of [RemoteFrameBufferClientUpdateRectangle]s that make this update.
+  /// Cursor rectangles are not in this list, see [cursor].
   @override
   Iterable<RemoteFrameBufferClientUpdateRectangle> get rectangles;
 
@@ -319,6 +359,262 @@ abstract class _RemoteFrameBufferClientUpdate
   @JsonKey(includeFromJson: false, includeToJson: false)
   _$$RemoteFrameBufferClientUpdateImplCopyWith<
           _$RemoteFrameBufferClientUpdateImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+mixin _$RemoteFrameBufferClientCursor {
+  /// The height in pixels, 0 for an invisible cursor.
+  int get height => throw _privateConstructorUsedError;
+
+  /// The x offset of the hotspot, the point of the cursor at the pointer.
+  int get hotspotX => throw _privateConstructorUsedError;
+
+  /// The y offset of the hotspot.
+  int get hotspotY => throw _privateConstructorUsedError;
+
+  /// [width] x [height] BGRA8888 pixels. The alpha comes from the cursor
+  /// bitmask: 255 where the cursor is drawn, 0 elsewhere, and the colour of
+  /// transparent pixels is 0, so the pixels are both premultiplied and
+  /// straight.
+  ByteData get pixels => throw _privateConstructorUsedError;
+
+  /// The width in pixels, 0 for an invisible cursor.
+  int get width => throw _privateConstructorUsedError;
+
+  /// Create a copy of RemoteFrameBufferClientCursor
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $RemoteFrameBufferClientCursorCopyWith<RemoteFrameBufferClientCursor>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $RemoteFrameBufferClientCursorCopyWith<$Res> {
+  factory $RemoteFrameBufferClientCursorCopyWith(
+          RemoteFrameBufferClientCursor value,
+          $Res Function(RemoteFrameBufferClientCursor) then) =
+      _$RemoteFrameBufferClientCursorCopyWithImpl<$Res,
+          RemoteFrameBufferClientCursor>;
+  @useResult
+  $Res call(
+      {int height, int hotspotX, int hotspotY, ByteData pixels, int width});
+}
+
+/// @nodoc
+class _$RemoteFrameBufferClientCursorCopyWithImpl<$Res,
+        $Val extends RemoteFrameBufferClientCursor>
+    implements $RemoteFrameBufferClientCursorCopyWith<$Res> {
+  _$RemoteFrameBufferClientCursorCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of RemoteFrameBufferClientCursor
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? height = null,
+    Object? hotspotX = null,
+    Object? hotspotY = null,
+    Object? pixels = null,
+    Object? width = null,
+  }) {
+    return _then(_value.copyWith(
+      height: null == height
+          ? _value.height
+          : height // ignore: cast_nullable_to_non_nullable
+              as int,
+      hotspotX: null == hotspotX
+          ? _value.hotspotX
+          : hotspotX // ignore: cast_nullable_to_non_nullable
+              as int,
+      hotspotY: null == hotspotY
+          ? _value.hotspotY
+          : hotspotY // ignore: cast_nullable_to_non_nullable
+              as int,
+      pixels: null == pixels
+          ? _value.pixels
+          : pixels // ignore: cast_nullable_to_non_nullable
+              as ByteData,
+      width: null == width
+          ? _value.width
+          : width // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$RemoteFrameBufferClientCursorImplCopyWith<$Res>
+    implements $RemoteFrameBufferClientCursorCopyWith<$Res> {
+  factory _$$RemoteFrameBufferClientCursorImplCopyWith(
+          _$RemoteFrameBufferClientCursorImpl value,
+          $Res Function(_$RemoteFrameBufferClientCursorImpl) then) =
+      __$$RemoteFrameBufferClientCursorImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {int height, int hotspotX, int hotspotY, ByteData pixels, int width});
+}
+
+/// @nodoc
+class __$$RemoteFrameBufferClientCursorImplCopyWithImpl<$Res>
+    extends _$RemoteFrameBufferClientCursorCopyWithImpl<$Res,
+        _$RemoteFrameBufferClientCursorImpl>
+    implements _$$RemoteFrameBufferClientCursorImplCopyWith<$Res> {
+  __$$RemoteFrameBufferClientCursorImplCopyWithImpl(
+      _$RemoteFrameBufferClientCursorImpl _value,
+      $Res Function(_$RemoteFrameBufferClientCursorImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of RemoteFrameBufferClientCursor
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? height = null,
+    Object? hotspotX = null,
+    Object? hotspotY = null,
+    Object? pixels = null,
+    Object? width = null,
+  }) {
+    return _then(_$RemoteFrameBufferClientCursorImpl(
+      height: null == height
+          ? _value.height
+          : height // ignore: cast_nullable_to_non_nullable
+              as int,
+      hotspotX: null == hotspotX
+          ? _value.hotspotX
+          : hotspotX // ignore: cast_nullable_to_non_nullable
+              as int,
+      hotspotY: null == hotspotY
+          ? _value.hotspotY
+          : hotspotY // ignore: cast_nullable_to_non_nullable
+              as int,
+      pixels: null == pixels
+          ? _value.pixels
+          : pixels // ignore: cast_nullable_to_non_nullable
+              as ByteData,
+      width: null == width
+          ? _value.width
+          : width // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$RemoteFrameBufferClientCursorImpl
+    extends _RemoteFrameBufferClientCursor {
+  const _$RemoteFrameBufferClientCursorImpl(
+      {required this.height,
+      required this.hotspotX,
+      required this.hotspotY,
+      required this.pixels,
+      required this.width})
+      : super._();
+
+  /// The height in pixels, 0 for an invisible cursor.
+  @override
+  final int height;
+
+  /// The x offset of the hotspot, the point of the cursor at the pointer.
+  @override
+  final int hotspotX;
+
+  /// The y offset of the hotspot.
+  @override
+  final int hotspotY;
+
+  /// [width] x [height] BGRA8888 pixels. The alpha comes from the cursor
+  /// bitmask: 255 where the cursor is drawn, 0 elsewhere, and the colour of
+  /// transparent pixels is 0, so the pixels are both premultiplied and
+  /// straight.
+  @override
+  final ByteData pixels;
+
+  /// The width in pixels, 0 for an invisible cursor.
+  @override
+  final int width;
+
+  @override
+  String toString() {
+    return 'RemoteFrameBufferClientCursor(height: $height, hotspotX: $hotspotX, hotspotY: $hotspotY, pixels: $pixels, width: $width)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$RemoteFrameBufferClientCursorImpl &&
+            (identical(other.height, height) || other.height == height) &&
+            (identical(other.hotspotX, hotspotX) ||
+                other.hotspotX == hotspotX) &&
+            (identical(other.hotspotY, hotspotY) ||
+                other.hotspotY == hotspotY) &&
+            (identical(other.pixels, pixels) || other.pixels == pixels) &&
+            (identical(other.width, width) || other.width == width));
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(runtimeType, height, hotspotX, hotspotY, pixels, width);
+
+  /// Create a copy of RemoteFrameBufferClientCursor
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$RemoteFrameBufferClientCursorImplCopyWith<
+          _$RemoteFrameBufferClientCursorImpl>
+      get copyWith => __$$RemoteFrameBufferClientCursorImplCopyWithImpl<
+          _$RemoteFrameBufferClientCursorImpl>(this, _$identity);
+}
+
+abstract class _RemoteFrameBufferClientCursor
+    extends RemoteFrameBufferClientCursor {
+  const factory _RemoteFrameBufferClientCursor(
+      {required final int height,
+      required final int hotspotX,
+      required final int hotspotY,
+      required final ByteData pixels,
+      required final int width}) = _$RemoteFrameBufferClientCursorImpl;
+  const _RemoteFrameBufferClientCursor._() : super._();
+
+  /// The height in pixels, 0 for an invisible cursor.
+  @override
+  int get height;
+
+  /// The x offset of the hotspot, the point of the cursor at the pointer.
+  @override
+  int get hotspotX;
+
+  /// The y offset of the hotspot.
+  @override
+  int get hotspotY;
+
+  /// [width] x [height] BGRA8888 pixels. The alpha comes from the cursor
+  /// bitmask: 255 where the cursor is drawn, 0 elsewhere, and the colour of
+  /// transparent pixels is 0, so the pixels are both premultiplied and
+  /// straight.
+  @override
+  ByteData get pixels;
+
+  /// The width in pixels, 0 for an invisible cursor.
+  @override
+  int get width;
+
+  /// Create a copy of RemoteFrameBufferClientCursor
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$RemoteFrameBufferClientCursorImplCopyWith<
+          _$RemoteFrameBufferClientCursorImpl>
       get copyWith => throw _privateConstructorUsedError;
 }
 

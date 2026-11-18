@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dart_rfb/src/client/config.dart';
 import 'package:dart_rfb/src/client/remote_frame_buffer_client.dart';
+import 'package:dart_rfb/src/encodings/cursor_decoder.dart';
 import 'package:dart_rfb/src/extensions/raw_socket_extensions.dart';
 import 'package:dart_rfb/src/protocol/encoding_type.dart';
 import 'package:fpdart/fpdart.dart';
@@ -120,6 +121,17 @@ Future<ByteData> _readRectanglePixelData({
 }) =>
     header.encodingType.map(
       copyRect: (final _) => socket.readSync(length: 4).run(),
+      cursor: (final _) {
+        final int length = CursorDecoder.dataLength(
+          bytesPerPixel: config.pixelFormat.bitsPerPixel ~/ 8,
+          width: header.width,
+          height: header.height,
+        );
+        // A 0x0 cursor (invisible) has no data.
+        return length == 0
+            ? Future<ByteData>.value(ByteData(0))
+            : socket.readSync(length: length, readWaitDuration: none()).run();
+      },
       raw: (final _) => socket
           .readSync(
             length: (header.width *

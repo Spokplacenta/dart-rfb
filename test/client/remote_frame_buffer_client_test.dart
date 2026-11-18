@@ -129,8 +129,15 @@ Future<void> _runServer(final List<Object> args) async {
     ..setUint8(15, 5)
     ..setUint32(20, 1);
   socket.add(<int>[...serverInit.buffer.asUint8List(), 0x41]);
-  // SetPixelFormat (20 bytes) and SetEncodings (4 + 3 * 4 bytes).
-  reportPort.send(await read(20 + 16));
+  // SetPixelFormat (20 bytes) and SetEncodings (4 bytes, then 4 per
+  // encoding).
+  final Uint8List setPixelFormatAndHeader = (await read(20 + 4))!;
+  final int encodingCount =
+      ByteData.sublistView(setPixelFormatAndHeader).getUint16(22);
+  reportPort.send(<int>[
+    ...setPixelFormatAndHeader,
+    ...(await read(encodingCount * 4))!,
+  ]);
   for (final _Step step in steps) {
     switch (step) {
       case _Read(:final int length):
@@ -197,6 +204,7 @@ void main() {
   /// the wire and in the update.
   Future<(RemoteFrameBufferClient, _FakeServer)> connect(
     final List<_Step> steps, {
+    final bool localCursor = false,
     final bool pipelineUpdateRequests = true,
     final RemoteFrameBufferPixelFormat? pixelFormat =
         RemoteFrameBufferPixelFormat.bgra8888,
@@ -205,9 +213,11 @@ void main() {
     servers.add(server);
     final RemoteFrameBufferClient client = pixelFormat == null
         ? RemoteFrameBufferClient(
+            localCursor: localCursor,
             pipelineUpdateRequests: pipelineUpdateRequests,
           )
         : RemoteFrameBufferClient(
+            localCursor: localCursor,
             pipelineUpdateRequests: pipelineUpdateRequests,
             pixelFormat: pixelFormat,
           );
@@ -274,8 +284,8 @@ void main() {
       final (RemoteFrameBufferClient client, _FakeServer server) =
           await connect(const <_Step>[], pixelFormat: requested);
       expect(client.config.toNullable()!.pixelFormat, expected);
-      final Uint8List setPixelFormat =
-          (await server.reports).first! as Uint8List;
+      final List<int> setPixelFormat =
+          (await server.reports).first! as List<int>;
       expect(setPixelFormat.sublist(0, 20), <int>[
         0, 0, 0, 0, // SetPixelFormat, padding
         ...expected.toBytes().buffer.asUint8List(),
@@ -401,6 +411,168 @@ void main() {
       ..requestUpdate();
     await update;
     expect((await server.reports)[2], 0);
+  });
+
+  test('a pointer event leaves while an update is still arriving', () async {
+    // On a slow link, the pixels of an update keep arriving while the next
+    // one is already requested: the read loop must still let the event loop
+    // run, or pointer events posted to the isolate are never sent (J364).
+    final (RemoteFrameBufferClient client, _FakeServer server) = await connect(
+      <_Step>[
+        _Send(<int>[..._rawUpdateHeader, ..._rawPixels.take(7)]),
+        const _Read(10), // pipelined request
+        const _Read(6), // must arrive before the last pixel byte is sent
+        _Send(<int>[_rawPixels.last]),
+      ],
+    );
+    // The partial update is waiting in the socket before the loop starts.
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    // Posted once the client waits for the last byte, as a click would be.
+    Timer(
+      const Duration(milliseconds: 50),
+      () => client.sendPointerEvent(
+        pointerEvent: const RemoteFrameBufferClientPointerEvent(
+          button1Down: true,
+          button2Down: false,
+          button3Down: false,
+          button4Down: false,
+          button5Down: false,
+          button6Down: false,
+          button7Down: false,
+          button8Down: false,
+          x: 3,
+          y: 1,
+        ),
+      ),
+    );
+    final Future<RemoteFrameBufferClientUpdate> update =
+        client.updateStream.first;
+    client.handleIncomingMessages();
+    await update;
+    final List<Object?> reports = await server.reports;
+    expect(reports[2], <int>[5, 1, 0, 3, 0, 1]);
+  });
+
+  test('a backlog of updates does not hold pointer events back', () async {
+    // When the client is slower than the link, the next message is always
+    // there already: no read ever waits, yet events must still be handled.
+    final (RemoteFrameBufferClient client, _) = await connect(
+      <_Step>[
+        _Send(<int>[
+          for (int i = 0; i < 3; i++) ...<int>[
+            ..._rawUpdateHeader,
+            ..._rawPixels,
+          ],
+        ]),
+      ],
+      pipelineUpdateRequests: false,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    int received = 0;
+    int? receivedWhenEventLoopRan;
+    Timer.run(() => receivedWhenEventLoopRan = received);
+    final Future<void> updates =
+        client.updateStream.take(3).forEach((final _) => received++);
+    client.handleIncomingMessages();
+    await updates;
+    // The event loop ran before the last update of the backlog was read.
+    expect(receivedWhenEventLoopRan, lessThan(3));
+  });
+
+  group('Cursor pseudo-encoding', () {
+    /// The encodings of the SetEncodings message the server received.
+    Future<List<int>> encodings(final _FakeServer server) async {
+      final ByteData bytes = ByteData.sublistView(
+        Uint8List.fromList((await server.reports).first! as List<int>),
+      );
+      return <int>[
+        for (int offset = 24; offset < bytes.lengthInBytes; offset += 4)
+          bytes.getInt32(offset),
+      ];
+    }
+
+    test('is not announced by default', () async {
+      final (RemoteFrameBufferClient client, _FakeServer server) =
+          await connect(const <_Step>[]);
+      expect(client.localCursor, isFalse);
+      expect(await encodings(server), <int>[16, 1, 0]);
+    });
+
+    test('is announced last with localCursor', () async {
+      final (RemoteFrameBufferClient client, _FakeServer server) =
+          await connect(const <_Step>[], localCursor: true);
+      expect(client.localCursor, isTrue);
+      expect(await encodings(server), <int>[16, 1, 0, -239]);
+    });
+
+    test('a cursor and a ZRLE rectangle in one update are split', () async {
+      final Uint8List zrle = Uint8List.fromList(
+        ZLibEncoder().convert(<int>[0, 0xAA, 0xBB, 0xCC]), // raw 1x1 tile
+      );
+      final (RemoteFrameBufferClient client, _) = await connect(
+        <_Step>[
+          _Send(<int>[
+            0, 0, 0, 2, // FramebufferUpdate, padding, 2 rectangles
+            // Cursor 2x1, hotspot (1, 0).
+            0, 1, 0, 0, 0, 2, 0, 1,
+            ...(ByteData(4)..setInt32(0, -239)).buffer.asUint8List(),
+            0, 0, 0xFF, 0, 0xFF, 0, 0, 0, // red, blue (32 bpp)
+            0x80, // only the first pixel is shown
+            // ZRLE 1x1 at (3, 1).
+            0, 3, 0, 1, 0, 1, 0, 1, 0, 0, 0, 16,
+            ...(ByteData(4)..setUint32(0, zrle.length)).buffer.asUint8List(),
+            ...zrle,
+          ]),
+        ],
+        localCursor: true,
+        pipelineUpdateRequests: false,
+      );
+      final Future<RemoteFrameBufferClientUpdate> update =
+          client.updateStream.first;
+      client.handleIncomingMessages();
+      final RemoteFrameBufferClientUpdate received = await update;
+      final RemoteFrameBufferClientUpdateRectangle rectangle =
+          received.rectangles.single;
+      expect(rectangle.encodingType, const RemoteFrameBufferEncodingType.raw());
+      expect((rectangle.x, rectangle.y), (3, 1));
+      expect(
+        rectangle.byteData.buffer.asUint8List(),
+        <int>[0xAA, 0xBB, 0xCC, 0xFF],
+      );
+      final RemoteFrameBufferClientCursor cursor =
+          received.cursor.toNullable()!;
+      expect((cursor.width, cursor.height), (2, 1));
+      expect((cursor.hotspotX, cursor.hotspotY), (1, 0));
+      expect(
+        Uint32List.sublistView(cursor.pixels),
+        <int>[0xFFFF0000, 0x00000000],
+      );
+    });
+
+    test('a 0x0 cursor reads no data and hides the cursor', () async {
+      final (RemoteFrameBufferClient client, _) = await connect(
+        <_Step>[
+          _Send(<int>[
+            0, 0, 0, 1, // FramebufferUpdate, padding, 1 rectangle
+            0, 0, 0, 0, 0, 0, 0, 0,
+            ...(ByteData(4)..setInt32(0, -239)).buffer.asUint8List(),
+            0, 0, 0, 1, // the next update, read right after
+            ..._rawUpdateHeader.sublist(4),
+            ..._rawPixels,
+          ]),
+        ],
+        localCursor: true,
+        pipelineUpdateRequests: false,
+      );
+      final Future<List<RemoteFrameBufferClientUpdate>> updates =
+          client.updateStream.take(2).toList();
+      client.handleIncomingMessages();
+      final List<RemoteFrameBufferClientUpdate> received = await updates;
+      expect(received.first.rectangles, isEmpty);
+      expect(received.first.cursor.toNullable()!.isVisible, isFalse);
+      expect(received.last.cursor.isNone(), isTrue);
+      expect(received.last.rectangles.single.byteData.lengthInBytes, 8);
+    });
   });
 
   group('SocketWriter', () {

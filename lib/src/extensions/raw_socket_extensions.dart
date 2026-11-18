@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:fpdart/fpdart.dart';
 
 extension RawSocketExtensions on RawSocket {
+  /// Reads exactly [length] bytes, waiting [readWaitDuration] (or a single
+  /// turn of the event loop) between two attempts while some are missing.
   Task<ByteData> readSync({
     required final int length,
     final Option<Duration> readWaitDuration = const None<Duration>(),
@@ -22,10 +24,12 @@ extension RawSocketExtensions on RawSocket {
               bytesBuilder.add,
             );
             if (bytesBuilder.length < length) {
-              await readWaitDuration.match(
-                () async {},
-                (final Duration duration) async =>
-                    await Future<void>.delayed(duration),
+              // Always through a timer, even without [readWaitDuration]: a
+              // bare `await` only runs microtasks, so the isolate would never
+              // handle its other events (e.g. the pointer events to send)
+              // while data is missing.
+              await Future<void>.delayed(
+                readWaitDuration.getOrElse(() => Duration.zero),
               );
             }
           }

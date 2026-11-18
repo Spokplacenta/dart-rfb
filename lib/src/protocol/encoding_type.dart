@@ -11,6 +11,13 @@ part 'encoding_type.freezed.dart';
 class RemoteFrameBufferEncodingType with _$RemoteFrameBufferEncodingType {
   const factory RemoteFrameBufferEncodingType.copyRect() =
       RemoteFrameBufferEncodingTypeCopyRect;
+
+  /// The Cursor pseudo-encoding: the server sends the cursor shape instead of
+  /// drawing it into the framebuffer.
+  ///
+  /// See: https://www.rfc-editor.org/rfc/rfc6143.html#section-7.8.1
+  const factory RemoteFrameBufferEncodingType.cursor() =
+      RemoteFrameBufferEncodingTypeCursor;
   const factory RemoteFrameBufferEncodingType.raw() =
       RemoteFrameBufferEncodingTypeRaw;
   const factory RemoteFrameBufferEncodingType.zrle() =
@@ -30,6 +37,8 @@ class RemoteFrameBufferEncodingType with _$RemoteFrameBufferEncodingType {
         return const RemoteFrameBufferEncodingType.copyRect();
       case 16:
         return const RemoteFrameBufferEncodingType.zrle();
+      case -239:
+        return const RemoteFrameBufferEncodingType.cursor();
       default:
         return RemoteFrameBufferEncodingType.unsupported(bytes: bytes);
     }
@@ -41,6 +50,7 @@ class RemoteFrameBufferEncodingType with _$RemoteFrameBufferEncodingType {
       0,
       map(
         copyRect: (final _) => 1,
+        cursor: (final _) => -239,
         raw: (final _) => 0,
         zrle: (final _) => 16,
         unsupported: (final _) => -1,

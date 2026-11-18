@@ -13,6 +13,7 @@ import 'package:dart_rfb/src/client/remote_frame_buffer_client_read_message.dart
 import 'package:dart_rfb/src/client/remote_frame_buffer_client_update.dart';
 import 'package:dart_rfb/src/client/socket_writer.dart';
 import 'package:dart_rfb/src/constants.dart';
+import 'package:dart_rfb/src/encodings/cursor_decoder.dart';
 import 'package:dart_rfb/src/encodings/pixel_converter.dart';
 import 'package:dart_rfb/src/encodings/zrle_decoder.dart';
 import 'package:dart_rfb/src/extensions/byte_data_extensions.dart';
@@ -47,6 +48,10 @@ class RemoteFrameBufferClient {
 
   Option<StreamSubscription<RemoteFrameBufferClientReadMessage>>
       _incomingMessagesSubscription = none();
+
+  Option<CursorDecoder> _cursorDecoder = none();
+
+  final bool _localCursor;
 
   Option<String> _password = none();
 
@@ -94,11 +99,20 @@ class RemoteFrameBufferClient {
   /// on slow links. Whatever the format, updates are delivered as opaque
   /// BGRA8888 pixels. Only true colour formats of 8, 16 or 32 bits per pixel
   /// are supported.
+  ///
+  /// With [localCursor], the client announces the Cursor pseudo-encoding: a
+  /// server that supports it stops drawing the cursor into the framebuffer
+  /// and sends its shape instead, in [RemoteFrameBufferClientUpdate.cursor].
+  /// The caller then draws it at the local pointer, which follows the mouse
+  /// without waiting for the server. Off by default: a caller that does not
+  /// draw the cursor would otherwise lose it.
   RemoteFrameBufferClient({
+    final bool localCursor = false,
     final bool pipelineUpdateRequests = true,
     final RemoteFrameBufferPixelFormat pixelFormat =
         RemoteFrameBufferPixelFormat.rgb565,
-  })  : _pipelineUpdateRequests = pipelineUpdateRequests,
+  })  : _localCursor = localCursor,
+        _pipelineUpdateRequests = pipelineUpdateRequests,
         _pixelFormat = pixelFormat {
     // Fail now rather than after the handshake.
     PixelConverter(pixelFormat: pixelFormat);
@@ -106,6 +120,10 @@ class RemoteFrameBufferClient {
 
   /// The config used by the underlying session.
   Option<Config> get config => _config;
+
+  /// Whether the Cursor pseudo-encoding is announced, see
+  /// [RemoteFrameBufferClient.new].
+  bool get localCursor => _localCursor;
 
   /// Whether update requests are pipelined, see [RemoteFrameBufferClient.new].
   bool get pipelineUpdateRequests => _pipelineUpdateRequests;
@@ -127,6 +145,10 @@ class RemoteFrameBufferClient {
             _config.getOrElse(() => throw Exception('Config not available'));
         _readLoopRunning = true;
         while (_readLoopRunning) {
+          // One turn of the event loop per message: when the next message is
+          // always there already, no read waits, and the isolate would never
+          // handle its other events (e.g. the pointer events to send).
+          await Future<void>.delayed(Duration.zero);
           final int messageType = (await socket
                   .readSync(
                     length: 1,
@@ -272,20 +294,33 @@ class RemoteFrameBufferClient {
           bell: () {},
           frameBufferUpdate:
               (final RemoteFrameBufferFrameBufferUpdateMessage message) {
-            final List<RemoteFrameBufferClientUpdateRectangle> convertedRectangles =
-                message.rectangles.map(
-                  (
-                    final RemoteFrameBufferFrameBufferUpdateMessageRectangle
-                        rectangle,
-                  ) =>
-                      _rectangleConverter.convert(
+            Option<RemoteFrameBufferClientCursor> cursor = none();
+            final List<RemoteFrameBufferClientUpdateRectangle>
+                convertedRectangles =
+                <RemoteFrameBufferClientUpdateRectangle>[];
+            for (final RemoteFrameBufferFrameBufferUpdateMessageRectangle rectangle
+                in message.rectangles) {
+              if (rectangle.encodingType
+                  is RemoteFrameBufferEncodingTypeCursor) {
+                // Not part of the framebuffer; the last shape wins.
+                _decodeCursor(rectangle).match(
+                  () {},
+                  (final RemoteFrameBufferClientCursor decoded) =>
+                      cursor = some(decoded),
+                );
+              } else {
+                convertedRectangles.add(
+                  _rectangleConverter.convert(
                     rectangle: rectangle,
                     zrleDecoder: _zrleDecoder,
                     pixelConverter: _pixelConverter,
                   ),
-                ).toList();
+                );
+              }
+            }
             _updateStreamController.add(
               RemoteFrameBufferClientUpdate(
+                cursor: cursor,
                 rectangles: convertedRectangles,
               ),
             );
@@ -375,6 +410,32 @@ class RemoteFrameBufferClient {
           );
           logger.info('> $message');
           _write(message.toBytes().asUint8List());
+        },
+      );
+
+  Option<RemoteFrameBufferClientCursor> _decodeCursor(
+    final RemoteFrameBufferFrameBufferUpdateMessageRectangle rectangle,
+  ) =>
+      _cursorDecoder.match(
+        () {
+          logger.warning('Received a cursor but decoder is not initialised');
+          return none();
+        },
+        (final CursorDecoder decoder) {
+          try {
+            return some(
+              decoder.decode(
+                data: rectangle.pixelData,
+                width: rectangle.width,
+                height: rectangle.height,
+                hotspotX: rectangle.x,
+                hotspotY: rectangle.y,
+              ),
+            );
+          } on FormatException catch (error) {
+            logger.warning('Failed to decode cursor: $error');
+            return none();
+          }
         },
       );
 
@@ -707,12 +768,14 @@ class RemoteFrameBufferClient {
   }) =>
       TaskEither<Object, void>.tryCatch(
         () async {
-          const RemoteFrameBufferSetEncodingsMessage message =
+          final RemoteFrameBufferSetEncodingsMessage message =
               RemoteFrameBufferSetEncodingsMessage(
             encodingTypes: <RemoteFrameBufferEncodingType>[
-              RemoteFrameBufferEncodingType.zrle(),
-              RemoteFrameBufferEncodingType.copyRect(),
-              RemoteFrameBufferEncodingType.raw(),
+              const RemoteFrameBufferEncodingType.zrle(),
+              const RemoteFrameBufferEncodingType.copyRect(),
+              const RemoteFrameBufferEncodingType.raw(),
+              // Pseudo-encodings come after the real ones.
+              if (_localCursor) const RemoteFrameBufferEncodingType.cursor(),
             ],
           );
           logger.info('> $message');
@@ -733,6 +796,7 @@ class RemoteFrameBufferClient {
           final PixelConverter converter =
               PixelConverter(pixelFormat: message.pixelFormat);
           _pixelConverter = some(converter);
+          _cursorDecoder = some(CursorDecoder(converter: converter));
           _zrleDecoder = some(ZrleDecoder.withConverter(converter: converter));
           logger.info('> $message');
           _write(message.toBytes().buffer.asUint8List());

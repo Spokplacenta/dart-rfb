@@ -64,3 +64,6 @@
 - ZRLE: CPIXEL of 1, 2 or 3 bytes depending on the pixel format (RFC 6143 §7.7.6); Raw rectangles are converted to BGRA8888 too, through a lookup table at 8 and 16 bpp (`PixelConverter`)
 - ZRLE decoder writes 32-bit pixels directly (`Uint32List`, `fillRange` for solid tiles and runs, reused palette) and inflates without a `List<int>` copy: 3 to 5 times faster
 - `RemoteFrameBufferPixelFormat.bgra8888` is now `const`
+- Add the Cursor pseudo-encoding (-239, RFC 6143 §7.8.1), opt-in with `RemoteFrameBufferClient(localCursor: true)`: the server stops drawing the cursor into the framebuffer and sends its shape, delivered as `RemoteFrameBufferClientUpdate.cursor` (`RemoteFrameBufferClientCursor`: BGRA8888 pixels whose alpha comes from the bitmask, hotspot, `isVisible` false for a 0x0 cursor). Cursor rectangles are no longer part of `RemoteFrameBufferClientUpdate.rectangles`. Pixels in 8, 16 or 32 bpp go through `PixelConverter`
+- `RemoteFrameBufferEncodingType` has a new `cursor` case: exhaustive `map`/`when` calls must handle it
+- Fix pointer and key events never sent while updates keep arriving (slow link with pipelined requests, or a client slower than the link): the read loop busy-waited on microtasks only, so the isolate never handled its other events. `readSync` now waits through a timer, and the read loop gives the event loop one turn per message
